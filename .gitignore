@@ -1,0 +1,7 @@
+.cache/
+.direnv/
+compile_commands.json
+include/ARINC653-wasm.h
+target/
+*.bc
+*.pch
