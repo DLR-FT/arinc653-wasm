@@ -1,5 +1,5 @@
 CC                 ?= clang
-C_FLAGS             = -target wasm32-unknown-wasi -I$(INC_DIR) -Wl,--no-entry,--export=cold_start,--export=warm_start,--allow-undefined-file=$(TARGET_DIR)/allow-undefined.syms -nostdlib -lc
+C_FLAGS             = --target=wasm32-unknown-wasi -I$(INC_DIR) -Wl,--no-entry,--export=cold_start,--export=warm_start,--allow-undefined-file=$(TARGET_DIR)/allow-undefined.syms -nostdlib -lc
 C_FLAGS_DEBUG       = $(C_FLAGS) -g
 C_FLAGS_RELEASE     = $(C_FLAGS) -O3
 
