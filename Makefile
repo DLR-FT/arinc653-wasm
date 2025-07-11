@@ -65,7 +65,7 @@ $(TARGET_DIR)/unprocessed-headers/ARINC653.h $(TARGET_DIR)/unprocessed-headers/A
 # rule to generate our Wasm header file, by making every open type a 32 Bit integer
 $(INC_DIR)/ARINC653-wasm.h: $(TARGET_DIR)/unprocessed-headers/ARINC653.h
 	mkdir -p -- $(INC_DIR)
-	sed 's/<an APEX integer type>/APEX_INTEGER/' $< > $@
+	sed 's/<an APEX integer type>/APEX_LONG_INTEGER/' $< > $@
 
 # Rule to compile C to Wasm
 $(TARGET_DIR)/%.$(WASM_EXT): $(SRC_DIR)/%.$(SRC_EXT) directories
