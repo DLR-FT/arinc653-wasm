@@ -1,5 +1,7 @@
 CC                  = clang
 C_FLAGS             = -c -target wasm32-unknown-none -I$(INC_DIR)
+C_FLAGS_DEBUG       = $(C_FLAGS) -g
+C_FLAGS_RELEASE     = $(C_FLAGS) -O3
 
 DUMP_LAYOUTS_FLAGS  = -o /dev/null -emit-llvm -femit-all-decls -Xclang -fdump-record-layouts
 
@@ -19,24 +21,27 @@ LAYOUT_EXT          = layout.txt
 
 
 HEADERS             = $(shell find $(INC_DIR) -type f -name *.$(HEADER_EXT))
+GENERATED_HEADERS   = $(INC_DIR)/ARINC653-wasm.h
 SOURCES             = $(shell find $(SRC_DIR) -type f -name *.$(SRC_EXT))
 
-WASM_FILES          = $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/%, $(SOURCES:.$(SRC_EXT)=.$(WASM_EXT)))
-WAT_FILES           = $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/%, $(SOURCES:.$(SRC_EXT)=.$(WAT_EXT)))
+WASM_FILES_DEBUG    = $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/debug/%, $(SOURCES:.$(SRC_EXT)=.$(WASM_EXT)))
+WASM_FILES_RELEASE  = $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/release/%, $(SOURCES:.$(SRC_EXT)=.$(WASM_EXT)))
+WAT_FILES           = $(WASM_FILES_DEBUG:.$(WASM_EXT)=.$(WAT_EXT)) $(WASM_FILES_RELEASE:.$(WASM_EXT)=.$(WAT_EXT))
 
-SRC_LAYOUTS         = $(addsuffix .$(LAYOUT_EXT), $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/%, $(SOURCES)))
-HEADER_LAYOUTS      = $(addsuffix .$(LAYOUT_EXT), $(patsubst $(INC_DIR)/%, $(TARGET_DIR)/%, $(HEADERS)))
+SRC_LAYOUTS         = $(addsuffix .$(LAYOUT_EXT), $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/layouts/%, $(SOURCES)))
+HEADER_LAYOUTS      = $(addsuffix .$(LAYOUT_EXT), $(patsubst $(INC_DIR)/%, $(TARGET_DIR)/layouts/%, $(HEADERS)))
+
+ALL_TARGET_FILES    = $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE) $(WAT_FILES) $(SRC_LAYOUTS) $(HEADER_LAYOUTS)
+
+.PHONY: all clean clean-all format layouts setup
 
 
-.PHONY: all directories clean format layouts setup
-
-
-all: directories $(WASM_FILES) $(WAT_FILES) layouts
-
-directories:
-	@mkdir -p -- $(SRC_DIR) $(TARGET_DIR) $(INC_DIR)
+all: $(ALL_TARGET_FILES)
 
 clean:
+	@rm -f -- $(ALL_TARGET_FILES)
+
+clean-all:
 	@rm -rf -- $(TARGET_DIR) compile_commands.json
 
 format:
@@ -46,7 +51,7 @@ layouts: $(SRC_LAYOUTS) $(HEADER_LAYOUTS)
 
 
 # for legal reasons we cannot include the header files, but we can automate the acquisition :)
-setup: $(INC_DIR)/ARINC653-wasm.h
+setup: $(GENERATED_HEADERS)
 
 
 #
@@ -55,7 +60,7 @@ setup: $(INC_DIR)/ARINC653-wasm.h
 
 # rule to download the ARINC headerfiles
 $(TARGET_DIR)/unprocessed-headers/ARINC653.h $(TARGET_DIR)/unprocessed-headers/ARINC653P2.h &:
-	@mkdir -p -- $(TARGET_DIR)/{downloads,unprocessed-headers}
+	@mkdir -p -- $(@D) $(TARGET_DIR)/downloads
 	# curl --location --output $(TARGET_DIR)/downloads/arinc653.h.zip https://brx-content.fullsight.org/site/binaries/content/assets/itc/content/support-files/arinc653.h.zip
 	curl --user-agent 'Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0' \
 		--location --output-dir $(TARGET_DIR)/downloads/ --remote-name-all \
@@ -63,27 +68,37 @@ $(TARGET_DIR)/unprocessed-headers/ARINC653.h $(TARGET_DIR)/unprocessed-headers/A
 	echo $(TARGET_DIR)/downloads/*.zip | xargs --max-args=1 bsdtar -x --cd $(TARGET_DIR)/unprocessed-headers --file
 
 # rule to generate our Wasm header file, by making every open type a 32 Bit integer
-$(INC_DIR)/ARINC653-wasm.h: $(TARGET_DIR)/unprocessed-headers/ARINC653.h
-	mkdir -p -- $(INC_DIR)
+$(INC_DIR)/ARINC653-wasm.h : $(TARGET_DIR)/unprocessed-headers/ARINC653.h
+	@mkdir -p -- $(@D)
 	sed 's/<an APEX integer type>/APEX_LONG_INTEGER/' $< > $@
 
-# Rule to compile C to Wasm
-$(TARGET_DIR)/%.$(WASM_EXT): $(SRC_DIR)/%.$(SRC_EXT) directories
-	$(CC) $(C_FLAGS) -o$@ -- $<
+# Rule to compile C to Wasm in debug mode
+$(TARGET_DIR)/debug/%.$(WASM_EXT) :: $(SRC_DIR)/%.$(SRC_EXT) $(GENERATED_HEADERS)
+	@mkdir -p -- $(@D)
+	$(CC) $(C_FLAGS_DEBUG) -o$@ -- $<
 
-# Rule to export Wasm Text (Wat) from Wasm)	
-%.$(WAT_EXT): %.$(WASM_EXT) directories
+# Rule to compile C to Wasm in release mode
+$(TARGET_DIR)/release/%.$(WASM_EXT) :: $(SRC_DIR)/%.$(SRC_EXT) $(GENERATED_HEADERS)
+	@mkdir -p -- $(@D)
+	$(CC) $(C_FLAGS_RELEASE) -o$@ -- $<
+
+# Rules to export Wasm Text (Wat) from Wasm
+%.$(WAT_EXT) : %.$(WASM_EXT)
 	$(WASM2WAT) --output=$@ $(WASM2WAT_FLAGS) -- $<
 
 # Rule to dump layout of data types in program
-$(TARGET_DIR)/%.c.$(LAYOUT_EXT): $(SRC_DIR)/%.$(SRC_EXT) directories
-	@: > $@
+$(TARGET_DIR)/layouts/%.c.$(LAYOUT_EXT) : $(SRC_DIR)/%.$(SRC_EXT)
+	@mkdir -p -- $(@D)
+	@rm -f -- $@
 	@echo "-----------fdump-record-layouts" >> $@
 	$(CC) $(C_FLAGS) $(DUMP_LAYOUTS_FLAGS) -- $< >> $@
 	@echo "-----------fdump-record-layouts-canonical" >> $@
 	$(CC) $(C_FLAGS) $(DUMP_LAYOUTS_FLAGS)-canonical -- $< >> $@
+	@echo "-----------fdump-record-layouts-complete" >> $@
+	$(CC) $(C_FLAGS) $(DUMP_LAYOUTS_FLAGS)-complete -- $< >> $@
 
 # Rule to dump layout of data types from header
-$(TARGET_DIR)/%.h.$(LAYOUT_EXT): $(INC_DIR)/%.$(HEADER_EXT) directories
+$(TARGET_DIR)/layouts/%.h.$(LAYOUT_EXT) : $(INC_DIR)/%.$(HEADER_EXT)
+	@mkdir -p -- $(@D)
 	@: > $@
-	$(CC) $(C_FLAGS) $(DUMP_LAYOUTS_FLAGS)-complete -- $< >> $@
+	$(CC) -Xclang -disable-llvm-optzns $(C_FLAGS) $(DUMP_LAYOUTS_FLAGS) -- $< >> $@
