@@ -2,18 +2,6 @@
   pkgs ? import <nixpkgs> { },
 }:
 
-let
-  headerFiles = {
-    arinc653p1 = {
-      url = "https://www.aviation-ia.com/support-files/arinc653h";
-      hash = "";
-    };
-    arinc653p2 = {
-      url = "https://www.aviation-ia.com/support-files/arinc653p2h";
-      hash = "";
-    };
-  };
-in
 pkgs.mkShell {
   nativeBuildInputs = with pkgs; [
     bear # to generate compile_commands.json for clangd
