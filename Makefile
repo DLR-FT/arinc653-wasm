@@ -75,7 +75,7 @@ $(TARGET_DIR)/unprocessed-headers/ARINC653.h $(TARGET_DIR)/unprocessed-headers/A
 
 # rule to generate our Wasm header file, by making every open type a 32 Bit integer
 $(INC_DIR)/ARINC653-wasm.$(HEADER_EXT) : $(TARGET_DIR)/unprocessed-headers/ARINC653.$(HEADER_EXT)
-	mkdir -p -- $(@D) $(TARGET_DIR)
+	@mkdir -p -- $(@D)
 	sed 's/<an APEX integer type>/APEX_LONG_INTEGER/' $< > $@
 
 # rule to list symbols which are allowed to be undefined
