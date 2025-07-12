@@ -1,7 +1,12 @@
-CC                 ?= clang
-C_FLAGS             = --target=wasm32-unknown-wasi -I$(INC_DIR) -Wl,--no-entry,--export=cold_start,--export=warm_start,--allow-undefined-file=$(TARGET_DIR)/allow-undefined.syms -nostdlib -lc
+CC                  = clang
+C_FLAGS             = --target=wasm32-unknown-wasi -I$(INC_DIR) -lc -nostartfiles
 C_FLAGS_DEBUG       = $(C_FLAGS) -g
 C_FLAGS_RELEASE     = $(C_FLAGS) -O3
+
+LD_FLAGS            = --no-entry --export=cold_start --export=warm_start --allow-undefined-file=$(TARGET_DIR)/allow-undefined.syms --unresolved-symbols=report-all
+EMPTY              :=
+COMMA              := ,
+C_FLAGS            += -Wl,$(subst $(EMPTY) $(EMPTY),$(COMMA),$(LD_FLAGS))
 
 DUMP_LAYOUTS_FLAGS  = -c -o /dev/null -emit-llvm -femit-all-decls -Xclang -fdump-record-layouts
 
@@ -77,12 +82,12 @@ $(INC_DIR)/ARINC653-wasm.$(HEADER_EXT) : $(TARGET_DIR)/unprocessed-headers/ARINC
 $(TARGET_DIR)/allow-undefined.syms : $(GENERATED_HEADERS)
 	awk '$$1 == "extern" && $$2 == "void" {print $$3}' $^ > $@
 
-# Rule to compile C to Wasm in debug mode
+# rule to compile C to Wasm in debug mode
 $(TARGET_DIR)/debug/%.$(WASM_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
 	@mkdir -p -- $(@D)/cdb-fragments
 	$(CC) $(C_FLAGS_DEBUG) -gen-cdb-fragment-path $(@D)/cdb-fragments -o$@ -- $<
 
-# Rule to compile C to Wasm in release mode
+# rule to compile C to Wasm in release mode
 $(TARGET_DIR)/release/%.$(WASM_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
 	@mkdir -p -- $(@D)/cdb-fragments
 	$(CC) $(C_FLAGS_RELEASE) -gen-cdb-fragment-path $(@D)/cdb-fragments -o$@ -- $<
@@ -93,11 +98,11 @@ compile_commands.json: $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE)
 	@cat $(TARGET_DIR)/*/cdb-fragments/*.json >> $@
 	@echo ']' >> $@
 
-# Rules to export Wasm Text (Wat) from Wasm
+# rule to export Wasm Text (Wat) from Wasm
 %.$(WAT_EXT) : %.$(WASM_EXT)
 	$(WASM2WAT) --output=$@ $(WASM2WAT_FLAGS) -- $<
 
-# Rule to dump layout of data types in program
+# rule to dump layout of data types in program
 $(TARGET_DIR)/layouts/%.c.$(LAYOUT_EXT) : $(SRC_DIR)/%.$(SRC_EXT)
 	@mkdir -p -- $(@D)
 	@rm -f -- $@
@@ -108,7 +113,7 @@ $(TARGET_DIR)/layouts/%.c.$(LAYOUT_EXT) : $(SRC_DIR)/%.$(SRC_EXT)
 	@echo "-----------fdump-record-layouts-complete" >> $@
 	$(CC) $(C_FLAGS) $(DUMP_LAYOUTS_FLAGS)-complete -- $< >> $@
 
-# Rule to dump layout of data types from header
+# rule to dump layout of data types from header
 $(TARGET_DIR)/layouts/%.h.$(LAYOUT_EXT) : $(INC_DIR)/%.$(HEADER_EXT)
 	@mkdir -p -- $(@D)
 	@: > $@
