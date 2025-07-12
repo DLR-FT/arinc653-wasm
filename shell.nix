@@ -12,7 +12,6 @@ pkgs.callPackage (
   {
     lib,
     mkShellNoCC,
-    bear,
     llvmPackages,
     wabt,
     wamr,
@@ -34,8 +33,6 @@ pkgs.callPackage (
     #
     # Note: Here we are intentionally opting out of Nix' cross-compilation splicing machinery
     depsBuildBuild = [
-      bear # to generate compile_commands.json for clangd
-
       # wasm tools
       wabt # wasm binary tools, to show Wasm Text (Wat) of a Wasm binary
       wamr # bytecode-alliance's micro runtime, an almost reference implementation of an interpreter
