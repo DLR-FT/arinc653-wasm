@@ -36,7 +36,7 @@ WAT_FILES           = $(WASM_FILES_DEBUG:.$(WASM_EXT)=.$(WAT_EXT)) $(WASM_FILES_
 SRC_LAYOUTS         = $(addsuffix .$(LAYOUT_EXT), $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/layouts/%, $(SOURCES)))
 HEADER_LAYOUTS      = $(addsuffix .$(LAYOUT_EXT), $(patsubst $(INC_DIR)/%, $(TARGET_DIR)/layouts/%, $(HEADERS)))
 
-ALL_TARGET_FILES    = $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE) $(WAT_FILES) $(SRC_LAYOUTS) $(HEADER_LAYOUTS) compile_commands.json
+ALL_TARGET_FILES    = $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE) $(WAT_FILES) $(SRC_LAYOUTS) $(HEADER_LAYOUTS) $(GENERATED_HEADERS) compile_commands.json
 
 COMPILE_REQUISITES  = $(GENERATED_HEADERS) $(TARGET_DIR)/allow-undefined.syms
 
@@ -48,7 +48,7 @@ all: $(ALL_TARGET_FILES)
 clean:
 	@rm -f -- $(ALL_TARGET_FILES) compile_commands.json
 
-clean-all:
+clean-all: clean
 	@rm -rf -- $(TARGET_DIR) compile_commands.json
 
 format:
@@ -74,9 +74,9 @@ $(TARGET_DIR)/unprocessed-headers/ARINC653.h $(TARGET_DIR)/unprocessed-headers/A
 	echo $(TARGET_DIR)/downloads/*.zip | xargs --max-args=1 bsdtar -x --cd $(TARGET_DIR)/unprocessed-headers --file
 
 # rule to generate our Wasm header file, by making every open type a 32 Bit integer
-$(INC_DIR)/ARINC653-wasm.$(HEADER_EXT) : $(TARGET_DIR)/unprocessed-headers/ARINC653.$(HEADER_EXT)
-	mkdir -p -- $(@D) $(TARGET_DIR)
-	sed 's/<an APEX integer type>/APEX_LONG_INTEGER/' $< > $@
+$(INC_DIR)/%-wasm.$(HEADER_EXT) : $(TARGET_DIR)/unprocessed-headers/%.$(HEADER_EXT)
+	@mkdir -p -- $(@D)
+	scripts/process-arinc-header.awk $< > $@
 
 # rule to list symbols which are allowed to be undefined
 $(TARGET_DIR)/allow-undefined.syms : $(GENERATED_HEADERS)
