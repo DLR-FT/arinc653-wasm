@@ -17,10 +17,9 @@ pkgs.callPackage (
     wamr,
     wasmtime,
 
-    gawk,
     curl,
     findutils,
-    gnused,
+    gawk,
     libarchive,
   }:
   mkShellNoCC {
@@ -39,10 +38,9 @@ pkgs.callPackage (
       wasmtime # bytecode-alliance's Wasm interpreter with advanced AOT compilation
 
       # generic cli tools
-      gawk
       curl # to download stuff
       findutils # for xargs
-      gnused # for sed
+      gawk # for awk to preprocess header files
       libarchive # bsdtar, to unpack zip files
     ];
 
