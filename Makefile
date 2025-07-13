@@ -103,7 +103,7 @@ compile_commands.json: $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE)
 	$(WASM2WAT) --output=$@ $(WASM2WAT_FLAGS) -- $<
 
 # rule to dump layout of data types in program
-$(TARGET_DIR)/layouts/%.c.$(LAYOUT_EXT) : $(SRC_DIR)/%.$(SRC_EXT)
+$(TARGET_DIR)/layouts/%.c.$(LAYOUT_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
 	@mkdir -p -- $(@D)
 	@rm -f -- $@
 	@echo "-----------fdump-record-layouts" >> $@
@@ -114,7 +114,7 @@ $(TARGET_DIR)/layouts/%.c.$(LAYOUT_EXT) : $(SRC_DIR)/%.$(SRC_EXT)
 	$(CC) $(C_FLAGS) $(DUMP_LAYOUTS_FLAGS)-complete -- $< >> $@
 
 # rule to dump layout of data types from header
-$(TARGET_DIR)/layouts/%.h.$(LAYOUT_EXT) : $(INC_DIR)/%.$(HEADER_EXT)
+$(TARGET_DIR)/layouts/%.h.$(LAYOUT_EXT) : $(INC_DIR)/%.$(HEADER_EXT) $(COMPILE_REQUISITES)
 	@mkdir -p -- $(@D)
 	@: > $@
 	$(CC) -Xclang -disable-llvm-optzns $(C_FLAGS) $(DUMP_LAYOUTS_FLAGS) -- $< >> $@
