@@ -3,7 +3,7 @@ C_FLAGS             = --target=wasm32-unknown-wasi -I$(INC_DIR) -lc -nostartfile
 C_FLAGS_DEBUG       = $(C_FLAGS) -g
 C_FLAGS_RELEASE     = $(C_FLAGS) -O3
 
-LD_FLAGS            = --no-entry --export=cold_start --export=warm_start --allow-undefined-file=$(TARGET_DIR)/allow-undefined.syms --unresolved-symbols=report-all
+LD_FLAGS            = --import-memory --no-entry --export-table --export=cold_start --export=warm_start --allow-undefined-file=$(TARGET_DIR)/allow-undefined.syms --unresolved-symbols=report-all
 EMPTY              :=
 COMMA              := ,
 C_FLAGS            += -Wl,$(subst $(EMPTY) $(EMPTY),$(COMMA),$(LD_FLAGS))
