@@ -20,6 +20,12 @@ BEGIN {
   is_impl_dependent = 0;
 }
 
+# mark all functions to be importend from the arinc module
+"extern" == $1 && "void" == $2 && $4 ~/^\(/ {
+  import_module = "arinc653:p1@0.1.0";
+  print "__attribute__((import_module(\"" import_module "\"), import_name(\"" $3 "\")))"
+}
+
 
 # make all implementation dependent defines ifndef based
 "#define" == $1 && $2 ~ /^SYSTEM_LIMIT_/ && 1 == is_impl_dependent {

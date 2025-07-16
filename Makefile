@@ -3,7 +3,7 @@ C_FLAGS             = --target=wasm32-unknown-wasi -I$(INC_DIR) -lc -nostartfile
 C_FLAGS_DEBUG       = $(C_FLAGS) -g
 C_FLAGS_RELEASE     = $(C_FLAGS) -O3
 
-LD_FLAGS            = --import-memory --no-entry --export-table --export=cold_start --export=warm_start --allow-undefined-file=$(TARGET_DIR)/allow-undefined.syms --unresolved-symbols=report-all
+LD_FLAGS            = --import-memory --no-entry --export-table --export=cold_start --export=warm_start --unresolved-symbols=report-all
 EMPTY              :=
 COMMA              := ,
 C_FLAGS            += -Wl,$(subst $(EMPTY) $(EMPTY),$(COMMA),$(LD_FLAGS))
@@ -38,7 +38,7 @@ HEADER_LAYOUTS      = $(addsuffix .$(LAYOUT_EXT), $(patsubst $(INC_DIR)/%, $(TAR
 
 ALL_TARGET_FILES    = $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE) $(WAT_FILES) $(SRC_LAYOUTS) $(HEADER_LAYOUTS) $(GENERATED_HEADERS) compile_commands.json
 
-COMPILE_REQUISITES  = $(GENERATED_HEADERS) $(TARGET_DIR)/allow-undefined.syms
+COMPILE_REQUISITES  = $(GENERATED_HEADERS)
 
 .PHONY: all clean clean-all format layouts setup
 
@@ -77,10 +77,6 @@ $(TARGET_DIR)/unprocessed-headers/ARINC653.h $(TARGET_DIR)/unprocessed-headers/A
 $(INC_DIR)/%-wasm.$(HEADER_EXT) : $(TARGET_DIR)/unprocessed-headers/%.$(HEADER_EXT)
 	@mkdir -p -- $(@D)
 	scripts/process-arinc-header.awk $< > $@
-
-# rule to list symbols which are allowed to be undefined
-$(TARGET_DIR)/allow-undefined.syms : $(GENERATED_HEADERS)
-	awk '$$1 == "extern" && $$2 == "void" {print $$3}' $^ > $@
 
 # rule to compile C to Wasm in debug mode
 $(TARGET_DIR)/debug/%.$(WASM_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
