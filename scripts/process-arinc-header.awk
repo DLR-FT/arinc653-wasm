@@ -26,6 +26,11 @@ BEGIN {
   print "__attribute__((import_module(\"" import_module "\"), import_name(\"" $3 "\")))"
 }
 
+# make all function pointers actually be function pointers
+$0 ~/SYSTEM_ADDRESS_TYPE\s+ENTRY_POINT/ {
+  gsub(/SYSTEM_ADDRESS_TYPE\s+ENTRY_POINT/,"void (*ENTRY_POINT)(void)", $0);
+}
+
 
 # make all implementation dependent defines ifndef based
 "#define" == $1 && $2 ~ /^SYSTEM_LIMIT_/ && 1 == is_impl_dependent {
