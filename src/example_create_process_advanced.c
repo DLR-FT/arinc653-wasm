@@ -1,11 +1,16 @@
 #include "ARINC653-wasm.h"
 #include <stdio.h>
 
+// Function prototypes
+void pp_main(void);
+void cold_start(void);
+void warm_start(void);
+
 // main periodic process
-void pp_main() {
+void pp_main(void) {
 
   // loop counter
-  APEX_UNSIGNED i;
+  APEX_UNSIGNED i = 0;
 
   while (1) {
     // allocate buffer for message
@@ -37,7 +42,7 @@ void pp_main() {
   }
 }
 
-void warm_start() {
+void warm_start(void) {
   PROCESS_ATTRIBUTE_TYPE pa = {
       .PERIOD = 0,
       .TIME_CAPACITY = 0,
@@ -53,7 +58,7 @@ void warm_start() {
   CREATE_PROCESS(&pa, &pid, &err);
 }
 
-void cold_start() {
+void cold_start(void) {
   // do some cold-start-only intitialization business
 
   warm_start();
