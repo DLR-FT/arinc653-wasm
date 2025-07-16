@@ -1,5 +1,5 @@
 CC                  = clang
-C_FLAGS             = --target=wasm32-unknown-wasi -I$(INC_DIR) -lc -nostartfiles
+C_FLAGS             = --target=wasm32-unknown-wasi -I$(INC_DIR) -lc -nostartfiles -Wall -Wextra -Wpedantic -fdiagnostics-color=always
 C_FLAGS_DEBUG       = $(C_FLAGS) -g
 C_FLAGS_RELEASE     = $(C_FLAGS) -O3
 

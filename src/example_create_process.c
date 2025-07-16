@@ -1,6 +1,10 @@
 #include "ARINC653-wasm.h"
 
-void warm_start() {
+// Function prototypes
+void cold_start(void);
+void warm_start(void);
+
+void warm_start(void) {
   PROCESS_ATTRIBUTE_TYPE pa;
   PROCESS_ID_TYPE pid;
   RETURN_CODE_TYPE err;
@@ -8,7 +12,7 @@ void warm_start() {
   CREATE_PROCESS(&pa, &pid, &err);
 }
 
-void cold_start() {
+void cold_start(void) {
   // do some cold-start-only intitialization business
 
   warm_start();
