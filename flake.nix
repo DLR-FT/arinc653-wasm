@@ -47,6 +47,18 @@
               # devShell for the wasm stuff
               wasm = pkgs.callPackage ./shell.nix { };
 
+              # devShell for the rust code
+              rust = pkgs.callPackage (
+                {
+                  mkShell,
+                  c-abi-lens,
+                  clippy,
+                }:
+                mkShell {
+                  inputsFrom = [ c-abi-lens ];
+                  nativeBuildInputs = [ clippy ];
+                }
+              ) { };
               default = self.devShells.${system}.wasm;
             };
 

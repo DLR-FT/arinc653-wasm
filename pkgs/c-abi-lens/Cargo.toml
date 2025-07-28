@@ -1,0 +1,13 @@
+[package]
+name = "c-abi-lens"
+version = "0.1.0"
+edition = "2024"
+description = "Generate header-only lens-library for C structs of foreign ABI"
+homepage = "https://github.com/DLR-FT/arinc653-wasm"
+
+[dependencies]
+clang = { version = "2.0.0", features = ["clang_10_0"] }
+clap = { version = "4.5.40", features = ["derive"] }
+colog = "1.3.0"
+color-eyre = "0.6.5"
+log = "0.4.27"
