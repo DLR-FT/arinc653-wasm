@@ -1,13 +1,16 @@
 {
-  pkgs ? import <nixpkgs> {
+  path ? <nixpkgs>,
+}:
+
+let
+  pkgs = import path {
     system = "x86_64-linux";
     crossSystem = {
       config = "wasm32-unknown-wasi";
       useLLVM = true;
     };
-  },
-}:
-
+  };
+in
 pkgs.callPackage (
   {
     lib,
