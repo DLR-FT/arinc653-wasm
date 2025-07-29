@@ -66,12 +66,16 @@ setup: $(GENERATED_HEADERS)
 #
 
 # rule to download the ARINC headerfiles
-$(TARGET_DIR)/unprocessed-headers/ARINC653.h $(TARGET_DIR)/unprocessed-headers/ARINC653P2.h &:
-	@mkdir -p -- $(@D) $(TARGET_DIR)/downloads
+$(TARGET_DIR)/downloads/arinc653.h.zip $(TARGET_DIR)/downloads/arinc653p2.h.zip &:
+	@mkdir -p -- $(@D)
 	curl --user-agent 'Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0' \
 		--location --output-dir $(TARGET_DIR)/downloads/ --remote-name-all \
 		https://brx-content.fullsight.org/site/binaries/content/assets/itc/content/support-files/arinc653{,p2}.h.zip
-	echo $(TARGET_DIR)/downloads/*.zip | xargs --max-args=1 bsdtar -x --cd $(TARGET_DIR)/unprocessed-headers --file
+	
+# rule to extract the ARINC headerfiles
+$(TARGET_DIR)/unprocessed-headers/ARINC653.h $(TARGET_DIR)/unprocessed-headers/ARINC653P2.h &: $(TARGET_DIR)/downloads/arinc653.h.zip $(TARGET_DIR)/downloads/arinc653p2.h.zip
+	@mkdir -p -- $(@D)
+	echo $^ | xargs --max-args=1 bsdtar -x --cd $(TARGET_DIR)/unprocessed-headers --modification-time --file
 
 # rule to generate our Wasm header file, by making every open type a 32 Bit integer
 $(INC_DIR)/%-wasm.$(HEADER_EXT) : $(TARGET_DIR)/unprocessed-headers/%.$(HEADER_EXT)
