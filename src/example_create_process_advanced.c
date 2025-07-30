@@ -1,5 +1,4 @@
 #include "ARINC653-wasm.h"
-#include <stdio.h>
 
 // Function prototypes
 void pp_main(void);
@@ -14,11 +13,11 @@ void pp_main(void) {
 
   while (1) {
     // allocate buffer for message
-    APEX_BYTE msg_buf[256];
+    APEX_BYTE msg_buf[256] = "hello #";
+    msg_buf[7] = (i % 10) + '0';
 
     // write message to buffer
-    APEX_INTEGER msg_len = 0;
-    msg_len = snprintf((char *)msg_buf, sizeof(msg_buf), "hello #%lu", i);
+    APEX_INTEGER msg_len = sizeof(msg_buf);
 
     // (error) return code
     RETURN_CODE_TYPE err;
