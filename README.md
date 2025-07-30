@@ -15,3 +15,11 @@
   **Reason**: Each partition has multiple processes, which are guaranteed to have a shared address space (ARINC 653 P1-5 chapter 2.3.2). The only way to achieve this is if they have shared linear memory. To cause that, they all need to import the linear memory.
 - **Choice**: export the function table (via `--export-table` linker flag)
   **Reason**: In order for the `CREATE_PROCESS` call to succeed, the host environment needs to be able to call a guest environment function identified via an index into said table. Exporting the table ensures that the funcref table is accessible from the host environment.
+
+# TODO
+
+- export table with funcrefs?
+- is APEX_LONG_INTEGER really 64 bit on all targets?
+- Shared memory between wasm partitions, how?
+- use `--import-memory=<module>,<name>`
+- check if we should use shared-memory

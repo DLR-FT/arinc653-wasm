@@ -11,6 +11,7 @@
 pkgs.callPackage (
   {
     lib,
+    hostPlatform,
     mkShellNoCC,
     llvmPackages,
     wabt,
@@ -45,15 +46,17 @@ pkgs.callPackage (
     ];
 
     env = {
-      CCC_OVERRIDE_OPTIONS = lib.strings.concatStringsSep " " [
-        "#"
-        "^-I${pkgs.stdenv.cc.libc.dev}/include"
-        "^-nostdlibinc"
-        "^-resource-dir=${pkgs.stdenv.cc}/resource-root"
-        "^-frandom-seed=5z87fdpjmk"
-        "^-Wno-unused-command-line-argument"
-        "^-Wl,-L${pkgs.stdenv.cc.libc}/lib"
-      ];
+      CCC_OVERRIDE_OPTIONS = lib.strings.optionalString hostPlatform.isWasi (
+        lib.strings.concatStringsSep " " [
+          "#"
+          "^-I${pkgs.stdenv.cc.libc.dev}/include"
+          # "^-nostdlibinc"
+          "^-resource-dir=${pkgs.stdenv.cc}/resource-root"
+          "^-frandom-seed=5z87fdpjmk"
+          "^-Wno-unused-command-line-argument"
+          "^-Wl,-L${pkgs.stdenv.cc.libc}/lib"
+        ]
+      );
     };
   }
 ) { }

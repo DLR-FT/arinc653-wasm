@@ -22,7 +22,7 @@ BEGIN {
 
 # mark all functions to be importend from the arinc module
 "extern" == $1 && "void" == $2 && $4 ~/^\(/ {
-  import_module = "arinc653:p1@0.1.0";
+  import_module = "arinc653:p1/s5@0.1.0";
   print "__attribute__((import_module(\"" import_module "\"), import_name(\"" $3 "\")))"
 }
 

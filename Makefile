@@ -1,5 +1,11 @@
 CC                  = clang
 C_FLAGS             = --target=wasm32-unknown-wasi -I$(INC_DIR) -lc -nostartfiles -Wall -Wextra -Wpedantic -fdiagnostics-color=always
+# pass -matomics
+# -mthread-model posix -pthread -ftls-model=local-exec
+# add export for stack pointer
+# (maybe futex like instructions get emitted)
+# memory.atomic.notify
+# memory.atomic.wait
 C_FLAGS_DEBUG       = $(C_FLAGS) -g
 C_FLAGS_RELEASE     = $(C_FLAGS) -O3
 

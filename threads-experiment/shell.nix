@@ -1,10 +1,10 @@
 {
   pkgs ? import <nixpkgs> {
     system = "x86_64-linux";
-    crossSystem = {
-      config = "wasm32-unknown-wasi";
-      useLLVM = true;
-    };
+    # crossSystem = {
+    #   config = "wasm32-unknown-wasi";
+    #   useLLVM = true;
+    # };
   },
 }:
 
@@ -14,6 +14,13 @@ pkgs.callPackage (
     wabt,
     wamr,
     wasmtime,
+
+    cmake,
+    llvmPackages,
+    ninja,
+    python3,
+    rustc,
+    cargo,
   }:
   mkShell {
     # devtools that don't need to know about the target arch
@@ -24,6 +31,13 @@ pkgs.callPackage (
       wabt # wasm binary tools, to show Wasm Text (Wat) of a Wasm binary
       wamr # bytecode-alliance's micro runtime, an almost reference implementation of an interpreter
       wasmtime # bytecode-alliance's Wasm interpreter with advanced AOT compilation
+
+      rustc
+      cargo
+      cmake
+      llvmPackages.clang-unwrapped
+      ninja
+      python3
     ];
   }
 ) { }
