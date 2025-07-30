@@ -1,9 +1,16 @@
-CC                  = clang
-C_FLAGS             = --target=wasm32-unknown-wasi -I$(INC_DIR) -lc -nostartfiles -Wall -Wextra -Wpedantic -fdiagnostics-color=always
-C_FLAGS_DEBUG       = $(C_FLAGS) -g
-C_FLAGS_RELEASE     = $(C_FLAGS) -O3
+CC                 ?= clang
 
-LD_FLAGS            = --import-memory --no-entry --export-table --export=cold_start --export=warm_start --unresolved-symbols=report-all
+C_FLAGS             = --target=wasm32-unknown-wasi -I$(INC_DIR) -nostartfiles
+C_FLAGS            += -matomics -mthread-model posix -pthread
+C_FLAGS            += -Wall -Wextra -Wpedantic -fdiagnostics-color=always
+
+C_FLAGS_DEBUG       = $(C_FLAGS) -g
+C_FLAGS_RELEASE     = $(C_FLAGS) -Oz
+
+LD_FLAGS            = --export-table --export=__stack_pointer --export=__tls_base --export=cold_start --export=warm_start
+LD_FLAGS           += --import-memory --no-entry
+LD_FLAGS           += --shared-memory --stack-first --unresolved-symbols=report-all
+
 EMPTY              :=
 COMMA              := ,
 C_FLAGS            += -Wl,$(subst $(EMPTY) $(EMPTY),$(COMMA),$(LD_FLAGS))
@@ -12,7 +19,7 @@ DUMP_LAYOUTS_FLAGS  = -c -o /dev/null -emit-llvm -femit-all-decls -Xclang -fdump
 
 
 WASM2WAT            = wasm2wat
-WASM2WAT_FLAGS      = --fold-exprs --enable-annotations --enable-code-metadata
+WASM2WAT_FLAGS      = --fold-exprs --enable-threads --enable-annotations --enable-code-metadata
 
 TARGET_DIR          = target
 
