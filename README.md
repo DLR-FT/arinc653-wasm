@@ -16,8 +16,19 @@
 - **Choice**: export the function table (via `--export-table` linker flag)
   **Reason**: In order for the `CREATE_PROCESS` call to succeed, the host environment needs to be able to call a guest environment function identified via an index into said table. Exporting the table ensures that the funcref table is accessible from the host environment.
 
-# Copyright and License
+# Legal Matter
 
 Copyright © 2025 Deutsches Zentrum für Luft- und Raumfahrt e.V. (DLR).
 
-Licensed under MIT + Apache 2.0 License: If you contribute to this project, you grant a license to use your contributions both under the terms of the MIT and under the terms of the Apache 2.0 license. If you use this project, you can choose whether to use it under the terms of the MIT license or under the terms of the Apache 2.0 license.
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT License ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
