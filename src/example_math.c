@@ -2,11 +2,7 @@
 #include <math.h>
 #include <string.h>
 
-// Function prototypes
-void cold_start(void);
-void warm_start(void);
-
-void warm_start(void) {
+int main(void) {
   volatile float x = 1.6;
   float y;
 
@@ -18,5 +14,3 @@ void warm_start(void) {
     REPORT_APPLICATION_MESSAGE((MESSAGE_ADDR_TYPE)msg, strlen(msg), &error);
   }
 }
-
-void cold_start(void) { warm_start(); }
