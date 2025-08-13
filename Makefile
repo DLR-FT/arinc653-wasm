@@ -7,7 +7,7 @@ C_FLAGS            += -Wall -Wextra -Wpedantic -fdiagnostics-color=always
 C_FLAGS_DEBUG       = $(C_FLAGS) -g
 C_FLAGS_RELEASE     = $(C_FLAGS) -Oz
 
-LD_FLAGS            = --export-table --export=__stack_pointer --export=__tls_base --export=cold_start --export=warm_start
+LD_FLAGS            = --export-memory --export-table --export=__stack_pointer --export=__tls_base --export=main
 LD_FLAGS           += --import-memory --no-entry
 LD_FLAGS           += --shared-memory --stack-first --unresolved-symbols=report-all
 

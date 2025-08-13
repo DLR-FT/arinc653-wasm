@@ -2,8 +2,6 @@
 
 // Function prototypes
 void pp_main(void);
-void cold_start(void);
-void warm_start(void);
 
 // main periodic process
 void pp_main(void) {
@@ -41,7 +39,7 @@ void pp_main(void) {
   }
 }
 
-void warm_start(void) {
+int main(void) {
   PROCESS_ATTRIBUTE_TYPE pa = {
       .PERIOD = 0,
       .TIME_CAPACITY = 0,
@@ -55,10 +53,4 @@ void warm_start(void) {
   RETURN_CODE_TYPE err;
 
   CREATE_PROCESS(&pa, &pid, &err);
-}
-
-void cold_start(void) {
-  // do some cold-start-only intitialization business
-
-  warm_start();
 }
