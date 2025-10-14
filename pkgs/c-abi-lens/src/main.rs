@@ -188,9 +188,13 @@ fn main() -> Result<()> {
                 .ok_or_eyre("unknown name")
                 .section(error_note.clone())?;
 
-            let field_offset_bits = struct_ty
-                .get_offsetof(&field_name)
-                .map_err(|e| eyre!("unknown offset").error(e).section(error_note.clone()))?;
+            let field_offset_bits = match struct_ty.get_offsetof(&field_name) {
+                Ok(offset) => offset,
+                Err(_) => {
+                    // Skip this field if offset is unknown
+                    continue;
+                }
+            };
 
             let field_ty = struct_field
                 .get_type()
