@@ -132,6 +132,33 @@ fn main() -> Result<()> {
         c_code_snippets.push(format!("/*{section_title:*^76}*/"));
         c_code_snippets.push("\n".into());
 
+        // print a table overview of the struct members
+        c_code_snippets.push("/* Struct overview\n".into());
+
+        let struct_align = struct_ty.get_alignof()?;
+        c_code_snippets.push(format!(" *\n * size = {struct_size_bytes} ({struct_size_bytes:#x}), align = {struct_align:#x}\n *\n"));
+
+        let mut member_overview_table = vec![vec!["field".into(), "offset".into(), "size".into()]];
+
+        for field in struct_.get_children() {
+            let field_name = field.get_name().ok_or_eyre("unknown name")?;
+            let field_offset = struct_ty.get_offsetof(&field_name)? / 8;
+            let field_size = field.get_type().ok_or_eyre("uknown type")?.get_sizeof()?;
+
+            member_overview_table.push(vec![
+                field_name,
+                format!("{field_offset} ({field_offset:#x})"),
+                format!("{field_size} ({field_size:#x})"),
+            ]);
+        }
+        let md_table = generate_md_table(member_overview_table);
+        for line in md_table {
+            c_code_snippets.push(format!(" * {line}\n"));
+        }
+
+        c_code_snippets.push(" */\n\n".into());
+
+        // start of actual access functions
         let function_name = function_name_gen("sizeof");
         // helper functions for size of the entire struct
         c_code_snippets.push(format!(
@@ -233,7 +260,8 @@ fn generate_getter_setter(
 
     let prefix = "inline";
     let namespace_prefix = "camw";
-    let function_name_gen = |op| format!("{namespace_prefix}_{op}__{struct_name}__{field_name}");
+    let function_name_gen =
+        |op| format!("{namespace_prefix}_{op}__{struct_name}__{field_name} struct");
     let u8 = "uint8_t";
 
     let type_formatter: Box<dyn FormatToCType>;
@@ -382,4 +410,47 @@ fn generate_getter_setter(
     ));
 
     Ok(c_code_snippets)
+}
+
+fn generate_md_table(mut data: Vec<Vec<String>>) -> Vec<String> {
+    let mut lines = Vec::with_capacity(data.len() + 1);
+
+    let num_cols = data.iter().map(Vec::len).max().unwrap_or(0);
+    let mut max_column_widths = vec![0; num_cols];
+
+    // determine the maximum width of each column by
+    for row in &data {
+        for (max, current) in max_column_widths.iter_mut().zip(row.iter()) {
+            *max = std::cmp::max(*max, current.len())
+        }
+    }
+
+    // assemble the lines making up this table
+    for (row_idx, row) in data.iter_mut().enumerate() {
+        // cells are separated by this str
+        let sep = " | ";
+
+        // after the 0th and before the 1st row print the hline separating table header from body
+        if row_idx == 1 {
+            let header_hlines: Vec<String> = max_column_widths
+                .iter()
+                .map(|desired_width| "-".repeat(*desired_width))
+                .collect();
+            lines.push(header_hlines.join(sep));
+        }
+
+        // emit all the rows making up the table
+        for (col_idx, cell) in row.iter_mut().enumerate() {
+            let desired_width = max_column_widths[col_idx];
+            // first col is left aligned, all other right aligned
+            *cell = if col_idx == 0 {
+                format!("{cell:<desired_width$}")
+            } else {
+                format!("{cell:>desired_width$}")
+            };
+        }
+        lines.push(row.join(sep));
+    }
+
+    lines
 }
