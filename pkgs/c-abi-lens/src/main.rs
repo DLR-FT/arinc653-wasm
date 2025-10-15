@@ -123,7 +123,7 @@ fn main() -> Result<()> {
         );
 
         // code gen boilerplate
-        let prefix = "inline";
+        let prefix = "static inline";
         let namespace_prefix = "camw";
         let function_name_gen = |op| format!("{namespace_prefix}_{op}__{struct_name}");
 
@@ -258,7 +258,7 @@ fn generate_getter_setter(
 
     let mut c_code_snippets = Vec::new();
 
-    let prefix = "inline";
+    let prefix = "static inline";
     let namespace_prefix = "camw";
     let function_name_gen =
         |op| format!("{namespace_prefix}_{op}__{struct_name}__{field_name} struct");
