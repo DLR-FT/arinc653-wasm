@@ -3,6 +3,7 @@ use color_eyre::{
     Result, Section,
     eyre::{ensure, eyre},
 };
+use log::error;
 
 /// Trait for types that can be formatted to C code
 pub trait FormatToCType {
@@ -102,5 +103,34 @@ impl FormatToCType for CByteArrayType {
 
     fn size_bytes(&self) -> usize {
         self.bytes
+    }
+}
+
+
+// Represent an unrepresentable type
+#[derive(Debug)]
+pub struct UnrepresentableType<'a>{
+    pub type_kind:  clang::TypeKind,
+    pub maybe_type:  Option<clang::Type<'a>>
+}
+
+impl<'a> FormatToCType for UnrepresentableType<'a> {
+
+    fn to_function_return_type(&self) -> String {
+        "void*".to_string()
+    }
+
+    fn to_function_argument_type(&self, argument_name: &str) -> String {
+         format!( "{} {argument_name}", Self::to_function_return_type(self))
+    }
+
+    fn size_bytes(&self) -> usize {
+        let Self { type_kind, maybe_type } = self;
+
+        match maybe_type.map(|t| t.get_sizeof()) {
+            Some(Ok(size)) => size,
+            Some(Err(e)) => {error!("Got error while figuring out sizeof {type_kind:?}, returning 0 instead:\n{e}"); 0},
+            None => {error!("No size information available for {type_kind:?}, returning 0 instead"); 0},
+        }
     }
 }

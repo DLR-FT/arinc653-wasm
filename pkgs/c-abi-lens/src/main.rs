@@ -1,6 +1,6 @@
 use std::{fs::File, io::Write, path::PathBuf};
 
-use c_types::{CByteArrayType, CIntegerStdintH, FormatToCType};
+use c_types::{CByteArrayType, CIntegerStdintH, FormatToCType, UnrepresentableType};
 use clang::*;
 
 use clap::Parser;
@@ -8,7 +8,7 @@ use color_eyre::{
     Result, Section,
     eyre::{OptionExt, bail, ensure, eyre},
 };
-use log::{debug, warn};
+use log::debug;
 
 mod c_types;
 
@@ -230,11 +230,11 @@ fn generate_getter_setter(
     let offset_bytes = offset_bits / 8;
 
     let mut c_code_snippets = Vec::new();
+    let mut c_funcs = Vec::with_capacity(4);
 
-    let prefix = "inline";
     let namespace_prefix = "camw";
     let function_name_gen = |op| format!("{namespace_prefix}_{op}__{struct_name}__{field_name}");
-    let u8 = "uint8_t";
+    let u8_ty = "uint8_t";
 
     let type_formatter: Box<dyn FormatToCType>;
 
@@ -243,6 +243,13 @@ fn generate_getter_setter(
 
     let section_title = format!(" {struct_name}.{field_name} ");
     c_code_snippets.push(format!("/*{section_title:*^76}*/"));
+
+    // string to anounce the presence of byte-swapping
+    let maybe_endianness_swapped = if swap_endianness {
+        ", with endianness swapped"
+    } else {
+        ""
+    };
 
     use TypeKind::*;
     match (canonical_type.get_kind(), canonical_type.get_element_type()) {
@@ -256,130 +263,260 @@ fn generate_getter_setter(
             let return_type = type_formatter.to_function_return_type();
             let argument_type = type_formatter.to_function_argument_type("value");
 
-            if swap_endianness {
-                let size_of_type_bytes = type_formatter.size_bytes();
-                let byte_swap_fn = match size_of_type_bytes {
-                    1 => "".to_string(),
-                    n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
-                    n => {
-                        bail!(
-                            "unable to perform a byte swap for an integer that is is {n} bytes wide"
-                        )
-                    }
-                };
+            let size_of_type_bytes = type_formatter.size_bytes();
+            let byte_swap_fn = match size_of_type_bytes {
+                1 => "".to_string(),
+                n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
+                n => {
+                    bail!("unable to perform a byte swap for an integer that is is {n} bytes wide")
+                }
+            };
 
-                let function_name = function_name_gen("get");
-                // getter for integer types
-                c_code_snippets.push(format!("\
-            // Get `{struct_name}.{field_name}`\n\
-            //\n\
-            // Returns the field `{field_name}`'s value from an instance of the `{struct_name}` struct, with endianness swapped\n\
-            {prefix} {return_type} {function_name}({u8} * struct_base_addr) {{\n\
-            \treturn {byte_swap_fn}(*({return_type}*)(struct_base_addr + {offset_bytes}));\n\
-            }}"));
+            // getter for integer types
+            c_funcs.push(CFunc {
+                comment: format!("\
+                    Get `{struct_name}.{field_name}`\n\
+                    \n\
+                    Returns the field `{field_name}`'s value from an instance of the `{struct_name}` struct{maybe_endianness_swapped}\
+                "),
+                return_type: return_type.clone(),
+                name: function_name_gen("get"),
+                arguments: [
+                    format!("{u8_ty} * struct_base_addr")
+                ].into(),
+                body: if swap_endianness {
+                    format!("return {byte_swap_fn}(*({return_type}*)(struct_base_addr + {offset_bytes}));")
+                }else {
+                    format!("return *({return_type}*)(struct_base_addr + {offset_bytes});")
+                }
+            });
 
-                let function_name = function_name_gen("set");
-                // setter for integer types
-                c_code_snippets.push(format!("\
-            // Set `{struct_name}.{field_name}` to `value`\n\
-            // \n\
-            // Overwrites the field `{field_name}`'s value of an `{struct_name}` struct instance with `value`, with endianness swapped\n\
-            {prefix} void {function_name}({u8} * struct_base_addr, {argument_type}) {{\n\
-            \t*(struct_base_addr + {offset_bytes}) = {byte_swap_fn}(value);\n\
-            }}"));
-            } else {
-                let function_name = function_name_gen("get");
-                // getter for integer types
-                c_code_snippets.push(format!("\
-            // Get `{struct_name}.{field_name}`\n\
-            //\n\
-            // Returns the field `{field_name}`'s value from an instance of the `{struct_name}` struct\n\
-            {prefix} {return_type} {function_name}({u8} * struct_base_addr) {{\n\
-            \treturn *({return_type}*)(struct_base_addr + {offset_bytes});\n\
-            }}"));
-
-                let function_name = function_name_gen("set");
-                // setter for integer types
-                c_code_snippets.push(format!("\
-            // Set `{struct_name}.{field_name}` to `value`\n\
-            // \n\
-            // Overwrites the field `{field_name}`'s value of an `{struct_name}` struct instance with `value`\n\
-            {prefix} void {function_name}({u8} * struct_base_addr, {argument_type}) {{\n\
-            \t*(struct_base_addr + {offset_bytes}) = value;\n\
-            }}"));
-            }
+            // setter for integer types
+            c_funcs.push(CFunc {
+                comment: format!("\
+                    Set `{struct_name}.{field_name}` to `value`\n\
+                    \n\
+                    Overwrites the field `{field_name}`'s value of an `{struct_name}` struct instance with `value`{maybe_endianness_swapped}\
+                "),
+                return_type: "void".into(),
+                name: function_name_gen("set"),
+                arguments: [
+                    format!("{u8_ty} * struct_base_addr"),
+                    argument_type
+                ].into(),
+                body: if swap_endianness {
+                    format!("*(struct_base_addr + {offset_bytes}) = {byte_swap_fn}(value);")
+                }else {
+                    format!("*(struct_base_addr + {offset_bytes}) = value;")
+                }
+            });
         }
 
-        // for arrays whose element type is one byte in size we can just verbatim copy
+        // for arrays whose element type is one byte in size we can just verbatim copy the elements
         (ConstantArray, Some(element_ty)) if element_ty.get_sizeof() == Ok(1) => {
             type_formatter = Box::new(CByteArrayType::new(canonical_type)?);
-            let argument_type_dst = type_formatter.to_function_argument_type("dst");
-            let argument_type_src = type_formatter.to_function_argument_type("src");
             let size_of_type_bytes = type_formatter.size_bytes();
 
-            let function_name = function_name_gen("read");
             // getter for array types
-            c_code_snippets.push(format!("\
-                // Read from `{struct_name}.{field_name}`\n\
-                //\n\
-                // Copies from `{field_name}` field of an instance of the `{struct_name}` struct to `destination`\n\
-                {prefix} void {function_name}({u8} * struct_base_addr, {argument_type_dst}) {{\n\
-                \tfor(uintptr_t i = 0; i < {size_of_type_bytes}; i++)\n\
-                \t\tdst[i] = struct_base_addr[{offset_bytes} + i];\n\
-                }}"));
+            c_funcs.push(CFunc {
+                comment: format!("\
+                    Read from `{struct_name}.{field_name}`\n\
+                    \n\
+                    Copies from `{field_name}` field of an instance of the `{struct_name}` struct to `destination`\
+                "),
+                return_type: "void".into(),
+                name: function_name_gen("read"),
+                arguments: [
+                    format!("{u8_ty} * struct_base_addr"),
+                    type_formatter.to_function_argument_type("dst")
+                ].into(),
+                body: format!("\
+                    for(uintptr_t i = 0; i < {size_of_type_bytes}; i++)\n\
+                    \tdst[i] = struct_base_addr[{offset_bytes} + i];\n\
+                ")
+            });
 
-            let function_name = function_name_gen("write");
             // setter for array types
-            c_code_snippets.push(format!("\
-                // Write to `{struct_name}.{field_name}`\n\
-                //\n\
-                // Copies from `source` to the `{field_name}` field of an `{struct_name}` struct instance\n\
-                {prefix} void {function_name}({u8} * struct_base_addr, {argument_type_src}) {{\n\
-                \tfor(uintptr_t i = 0; i < {size_of_type_bytes}; i++)\n\
-                \t\tstruct_base_addr[{offset_bytes} + i] = src[i];\n\
-                }}"));
+            c_funcs.push(CFunc {
+                comment: format!("\
+                    Write to `{struct_name}.{field_name}`\n\
+                    \n\
+                    Copies from `source` to the `{field_name}` field of an `{struct_name}` struct instance\
+                "),
+                return_type: "void".into(),
+                name: function_name_gen("write"),
+                arguments: [
+                    format!("{u8_ty} * struct_base_addr"),
+                    type_formatter.to_function_argument_type("src")
+                ].into(),
+                body: format!("\
+                    for(uintptr_t i = 0; i < {size_of_type_bytes}; i++)\n\
+                    \tstruct_base_addr[{offset_bytes} + i] = src[i];\
+                ")
+            });
         }
 
-        // TODO for array whose element types are larger than one byte in size, endian-ness swap eacht element
-        (Record, _) => {
-            // TODO just return a pointer to this records offset
-            return Ok(vec![]);
-        }
+        // we don't know what to do, so just hand out a void pointer
+        (type_kind, maybe_type) => {
+            type_formatter = Box::new(UnrepresentableType{ type_kind, maybe_type});
 
-        // we don't know what to do
-        x => {
-            warn!(
-                "don't know how to represent types of \"{x:?}\" kind\n\
-                elaborated type:  {ty:?}\n\
-                canonical type:   {canonical_type:?}"
-            );
-            return Ok(vec![]);
+            // accessor via void ptr
+            c_funcs.push(CFunc {
+                comment: format!("\
+                    Get void pointer to `{struct_name}.{field_name}`\n\
+                    \n\
+                    No ABI compatible representation of this type is known, therefore this just returns a void ptr\n\
+                    \n\
+                    type kind:  {type_kind:?}\n\
+                    maybe type: {maybe_type:?}\
+                "),
+                return_type: "void *".into(),
+                name: function_name_gen("get"),
+                arguments: [
+                    format!("{u8_ty} * struct_base_addr"),
+                ].into(),
+                body: format!("return (void*)(struct_base_addr + {offset_bytes});")
+            });
         }
     }
 
-    let function_name = function_name_gen("sizeof");
     // helper functions for size of the field
-    c_code_snippets.push(format!(
-        "\
-        // sizeof(`{struct_name}->{field_name})`\n\
-        //\n\
-        // Returns the size in bytes of the `{field_name}` field from the `{struct_name}` struct\n\
-        {prefix} uintptr_t {function_name}() {{\n\
-        \treturn {};\n\
-        }}",
-        type_formatter.size_bytes()
-    ));
+    c_funcs.push(CFunc {
+        comment: format!(
+            "\
+            `sizeof({struct_name}->{field_name})`\n\
+            \n\
+            Returns the size in bytes of the `{field_name}` field from the `{struct_name}` struct\
+        "
+        ),
+        return_type: "uintptr_t".into(),
+        name: function_name_gen("sizeof"),
+        arguments: vec![],
+        body: format!("return {};", type_formatter.size_bytes()),
+    });
 
-    let function_name = function_name_gen("offsetof");
     // helper functions for offset of the field withing the struct
-    c_code_snippets.push(format!("\
-        // `offsetof({struct_name}, {field_name})`\n\
-        //\n\
-        // Get the offset in bytes of the `{field_name}` field from the start of a `{struct_name}` struct\n\
-        {prefix} uintptr_t {function_name}() {{\n\
-        \treturn {offset_bytes};\n\
-        }}",
-    ));
+    c_funcs.push(CFunc {
+        comment: format!("\
+            `offsetof({struct_name}, {field_name})`\n\
+            \n\
+             Get the offset in bytes of the `{field_name}` field from the start of a `{struct_name}` struct\
+        "),
+        return_type: "uintptr_t".into(),
+        name: function_name_gen("offsetof"),
+        arguments: vec![],
+        body: format!("return {offset_bytes};"),
+    });
+
+    // concat all the function declarations
+    for c_func in c_funcs {
+        // println!("{:#?}", c_func.gen_inline_implementation().unwrap());
+        // println!("{}", c_func.gen_inline_implementation().unwrap());
+        c_code_snippets.push(c_func.gen_inline_implementation()?);
+    }
 
     Ok(c_code_snippets)
+}
+
+/// Representation of a C-Function
+struct CFunc {
+    pub comment: String,
+    pub return_type: String, //Box<dyn FormatToCType>,
+    pub name: String,
+    pub arguments: Vec<String>,
+    pub body: String,
+}
+
+impl CFunc {
+    /// Generate prototype (declaration) for this function
+    pub fn gen_prototype(&self) -> Result<String> {
+        let Self {
+            return_type, name, ..
+        } = self;
+        let comment = self.format_comment();
+        let args = self.format_args();
+        Ok(format!("{comment}{return_type} {name}({args});"))
+    }
+
+    /// Generate implementation for this function
+    pub fn gen_implementation(&self) -> Result<String> {
+        let Self {
+            return_type, name, ..
+        } = self;
+        let args = self.format_args();
+        let body = self.format_body();
+        Ok(format!("{return_type} {name}({args}){{\n{body}\n}}"))
+    }
+
+    /// Generate inline implementation for this function
+    pub fn gen_inline_implementation(&self) -> Result<String> {
+        let Self {
+            return_type, name, ..
+        } = self;
+        let comment = self.format_comment();
+        let args = self.format_args();
+        let body = self.format_body();
+        Ok(format!(
+            "{comment}inline {return_type} {name}({args}){{\n{body}}}"
+        ))
+    }
+
+    /// Formats a comment string into what C actually considers a comment (e.g. each line prefixed with `// `)
+    fn format_comment(&self) -> String {
+        let comment_token = "//";
+        let newline = "\n";
+        let space = " ";
+        let mut result = String::new();
+        for line in self.comment.lines() {
+            result.push_str(comment_token);
+            if !line.is_empty() {
+                result.push_str(space);
+                result.push_str(line);
+            }
+            result.push_str(newline);
+        }
+        result
+    }
+
+    /// Formats a function body
+    fn format_body(&self) -> String {
+        let indentation_token = "\t";
+        let newline = "\n";
+        let mut result = String::new();
+        for line in self.body.lines() {
+            if !line.is_empty() {
+                result.push_str(indentation_token);
+                result.push_str(line);
+            }
+            result.push_str(newline);
+        }
+        result
+    }
+
+    /// Formats the arugments into an argument list
+    fn format_args(&self) -> String {
+        let arg_sep_token = ", ";
+        let vec: Vec<_> = self.arguments.iter().map(|a| a.to_string()).collect();
+        vec.join(arg_sep_token)
+    }
+}
+
+struct CFuncArg {
+    type_: Box<dyn FormatToCType>,
+    name: String,
+}
+
+impl CFuncArg {
+    fn new<T: Into<Box<dyn FormatToCType>>, U: Into<String>>(type_: T, name: U) -> Self {
+        Self {
+            type_: type_.into(),
+            name: name.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for CFuncArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.type_.to_function_argument_type(&self.name))
+    }
 }
