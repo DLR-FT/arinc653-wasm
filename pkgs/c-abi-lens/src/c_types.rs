@@ -25,11 +25,11 @@ pub struct CIntegerStdintH {
 
 impl CIntegerStdintH {
     pub fn new(ty: clang::Type) -> Result<Self> {
-        ensure!(
-            ty.is_integer() || ty.get_pointee_type().is_some() || ty.get_kind() == TypeKind::Enum,
-            eyre!("translate_integer_type can only translate integer, pointer and enum types")
-                .with_warning(|| format!("type in question: {ty:?}"))
-        );
+        // ensure!(
+        //     ty.is_integer() || ty.get_pointee_type().is_some() || ty.get_kind() == TypeKind::Enum,
+        //     eyre!("translate_integer_type can only translate integer, pointer and enum types")
+        //         .with_warning(|| format!("type in question: {ty:?}"))
+        // );
 
         let value_size_bytes = ty
             .get_sizeof()

@@ -115,7 +115,7 @@ fn main() -> Result<()> {
     for struct_ in structs {
         let struct_ty = struct_.get_type().ok_or_eyre("struct type is unknown?!")?;
         let struct_size_bytes = struct_ty.get_sizeof()?;
-        let struct_name = struct_.get_name().ok_or_eyre("struct has no name")?;
+        let struct_name = struct_ty.get_canonical_type().get_display_name(); // struct_.get_name().ok_or_eyre("struct has no name")?;
         debug!(
             "struct: {:?} (size: {} bytes)",
             struct_.get_name().unwrap(),
@@ -124,7 +124,7 @@ fn main() -> Result<()> {
 
         // code gen boilerplate
         let prefix = "inline";
-        let namespace_prefix = "camw";
+        let namespace_prefix = "cal";
         let function_name_gen = |op| format!("{namespace_prefix}_{op}__{struct_name}");
 
         // section header for this struct
@@ -161,14 +161,24 @@ fn main() -> Result<()> {
                 .ok_or_eyre("unknown name")
                 .section(error_note.clone())?;
 
-            let field_offset_bits = struct_ty
-                .get_offsetof(&field_name)
-                .map_err(|e| eyre!("unknown offset").error(e).section(error_note.clone()))?;
+            let (field_offset_bits, field_ty) = match (struct_ty
+                .get_offsetof(&field_name),   struct_field
+                .get_type()) {
+                    (Ok(fo), Some(ft)) => (fo, ft),
+                    _ => continue,
+                    // (Ok(_), None) => todo!(),
+                    // (Err(_), None) => todo!(),
+                    // (Err(_), Some(_)) => todo!(),
+                };
+                
+            // let field_offset_bits = struct_ty
+            //     .get_offsetof(&field_name)
+            //     .map_err(|e| eyre!("unknown offset").error(e).section(error_note.clone()))?;
 
-            let field_ty = struct_field
-                .get_type()
-                .ok_or_eyre("uknown type")
-                .section(error_note.clone())?;
+            // let field_ty = struct_field
+            //     .get_type()
+            //     .ok_or_eyre("uknown type")
+            //     .section(error_note.clone())?;
 
             debug!(
                 "    field: {:?} (offset: {} bits)",
@@ -222,6 +232,7 @@ fn generate_getter_setter(
     offset_bits: usize,
     ty: clang::Type,
     swap_endianness: bool,
+
 ) -> Result<Vec<String>> {
     if offset_bits % 8 != 0 {
         bail!("bit offset which is not devisable by 8, this is not implemented yet");
@@ -232,7 +243,7 @@ fn generate_getter_setter(
     let mut c_code_snippets = Vec::new();
     let mut c_funcs = Vec::with_capacity(4);
 
-    let namespace_prefix = "camw";
+    let namespace_prefix = "cal";
     let function_name_gen = |op| format!("{namespace_prefix}_{op}__{struct_name}__{field_name}");
     let u8_ty = "uint8_t";
 
