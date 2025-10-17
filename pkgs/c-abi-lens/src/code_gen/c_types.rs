@@ -16,7 +16,7 @@ pub enum RepresentableCType {
     },
     Array {
         element_type: Box<RepresentableCType>,
-        dimensional_lengths: Vec<u64>,
+        length: u64,
     },
     Opaque {
         bytes: Option<u64>,
@@ -58,17 +58,17 @@ impl RepresentableCType {
                 Ok(RepresentableCType::Float { bytes: size })
             }
 
+            // a 1 or multidimensional array of one given type
             (ConstantArray, _, Some(Ok(element_type_repr))) => {
                 let length = type_
                     .get_size()
                     .unwrap()
                     .try_into()
                     .expect("unable to fit type size into an u64");
-                // .ok_or(|| eyre!("array {type_:?} does not have a known length"))?;
 
                 Ok(Self::Array {
                     element_type: Box::new(element_type_repr),
-                    dimensional_lengths: vec![length], // TODO find out how to get multi dimensional lengths
+                    length,
                 })
             }
 
@@ -107,17 +107,14 @@ impl RepresentableCType {
                 format!("double{maybe_var_name_with_space_prefix}")
             }
             Self::Float { bytes } => panic!("unable to represent a {bytes} float"),
-            Self::Array {
-                element_type,
-                dimensional_lengths,
-            } if matches!(
-                **element_type,
-                Self::Integer { .. } | Self::Float { .. } | Self::Opaque { .. }
-            ) =>
-            {
-                let mut base_type = element_type.format_as_type(None);
+            Self::Array { .. } => {
+                let mut base_type = self.element_type().format_as_type(None);
                 base_type.push_str(&maybe_var_name_with_space_prefix);
-                base_type.extend(dimensional_lengths.iter().map(|d| format!("[{d}]")));
+                self.recurse_into_type(|c_type, _, is_last| {
+                    if !is_last {
+                        base_type.push_str(&format!("[{}]", c_type.length_1d()));
+                    }
+                });
 
                 base_type
             }
@@ -126,47 +123,26 @@ impl RepresentableCType {
             }
             Self::UIntPtr => "uintptr_t".into(),
             Self::Void => "void".into(),
-            _ => {
-                panic!(
-                    "instance {self:#?} should not have been constructed; we don't know how to represent that in C"
-                );
-            }
         }
     }
 
-    /// Get the size in bytes of this type (not including possible padding)
+    /// Get the size in bytes of this type
     ///
     /// For arrays, this returns the size of the entire array
-    pub fn size_bytes(&self) -> Result<u64> {
-        Ok(match self {
-            Self::Array {
-                element_type,
-                ..
-                // dimensional_lengths,
-            } => {
-                let bytes_per_element = &element_type.size_bytes()?;
-                let total_elements: u64 = self.size_element_bytes()?;
-                bytes_per_element * total_elements
-            }
-            _ => self.size_element_bytes()?
-        })
+    pub fn total_size_bytes(&self) -> Result<u64> {
+        let element_size = self.element_size_bytes()?;
+        let length = self.length();
+        Ok(element_size * length)
     }
 
     /// Get the size in bytes of this type (not including possible padding)
     ///
     /// For arrays, this returns the size of an individual element
-    pub fn size_element_bytes(&self) -> Result<u64> {
+    pub fn element_size_bytes(&self) -> Result<u64> {
         Ok(match self {
             Self::Integer { bytes, .. } => (*bytes).into(),
             Self::Float { bytes } => (*bytes).into(),
-            Self::Array { element_type, .. } => {
-                assert!(
-                    !matches!(&**element_type, Self::Array { .. },),
-                    "nested arrays cause recursion for this function and shall never be constructed"
-                );
-
-                element_type.size_bytes()?
-            }
+            Self::Array { .. } => self.element_type().element_size_bytes()?,
             Self::Opaque { bytes: Some(bytes) } => *bytes,
             Self::Opaque { bytes: None } | Self::UIntPtr | Self::Void => {
                 bail!("type {self:?} has no known size")
@@ -174,9 +150,39 @@ impl RepresentableCType {
         })
     }
 
-    /// Get the length in elements, or `1` otherwise
+    pub fn element_type(&self) -> RepresentableCType {
+        match self {
+            Self::Array { element_type, .. } => {
+                let mut base_type = None;
+                element_type.recurse_into_type(|c_type, _, is_last| {
+                    if is_last {
+                        base_type = Some(c_type.clone())
+                    }
+                });
+
+                base_type.expect("recurse_into_type must always terminate with a last element true")
+            }
+            x => x.clone(),
+        }
+    }
+
+    /// Get the length in elements of an array's first dimension, or `1` otherwise
     ///
-    /// Returns the product of all dimensions if this is multi-dimensional
+    /// Returns **only** the first dimension length for arrays
+    pub fn length_1d(&self) -> u64 {
+        match self {
+            Self::Integer { .. }
+            | Self::Float { .. }
+            | Self::Opaque { .. }
+            | Self::UIntPtr
+            | Self::Void => 1,
+            Self::Array { length, .. } => *length,
+        }
+    }
+
+    /// Get the length in elements of an array, or `1` otherwise
+    ///
+    /// Returns the **product** of all dimensions if this is multi-dimensional array
     pub fn length(&self) -> u64 {
         match self {
             Self::Integer { .. }
@@ -184,10 +190,49 @@ impl RepresentableCType {
             | Self::Opaque { .. }
             | Self::UIntPtr
             | Self::Void => 1,
-            Self::Array {
-                dimensional_lengths,
-                ..
-            } => dimensional_lengths.iter().product(),
+            Self::Array { .. } => {
+                let mut length = 1;
+                self.recurse_into_type(|c_type, _, _| length *= c_type.length_1d());
+                length
+            }
+        }
+    }
+
+    /// Recurse into a nested type, calling a closure for each layer
+    ///
+    /// Implemented without function recursion.
+    ///
+    fn recurse_into_type<F: FnMut(&RepresentableCType, bool, bool)>(&self, mut f: F) {
+        let mut c_type = self;
+        let mut next_c_type = self;
+        let mut is_first = true;
+        let mut is_last;
+
+        loop {
+            match c_type {
+                RepresentableCType::Array { element_type, .. } => {
+                    // if the recursion continues, this is not the last element!
+                    is_last = false;
+                    // mark the next element
+                    next_c_type = element_type;
+                }
+                _ => {
+                    // if this is not a recursive variant, the recursion ends!
+                    is_last = true;
+                }
+            }
+
+            // run the actual closure
+            f(c_type, is_first, is_last);
+
+            if is_last {
+                // if this was the last recursion, break
+                break;
+            }
+
+            // else advance `c_type` and make sure this was the only time `is_first` is `true`
+            c_type = next_c_type;
+            is_first = false;
         }
     }
 }
@@ -195,5 +240,26 @@ impl RepresentableCType {
 impl std::fmt::Display for RepresentableCType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.format_as_type(None))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::RepresentableCType;
+
+    #[test]
+    fn test_format_array() {
+        let arr = RepresentableCType::Array {
+            element_type: Box::new(RepresentableCType::Array {
+                element_type: Box::new(RepresentableCType::Integer {
+                    bytes: 4,
+                    is_unsigned: true,
+                }),
+                length: 11,
+            }),
+            length: 7,
+        };
+
+        assert_eq!(arr.format_as_type(Some("arr")), "uint32_t arr[7][11]")
     }
 }
