@@ -261,7 +261,7 @@ fn generate_getter_setter(
     let prefix = "inline";
     let namespace_prefix = "camw";
     let function_name_gen =
-        |op| format!("{namespace_prefix}_{op}__{struct_name}__{field_name} struct");
+        |op| format!("{namespace_prefix}_{op}__{struct_name}__{field_name}");
     let u8 = "uint8_t";
 
     let type_formatter: Box<dyn FormatToCType>;
