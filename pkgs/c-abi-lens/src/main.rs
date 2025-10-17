@@ -372,10 +372,18 @@ fn generate_getter_setter(
                 }}"));
         }
 
-        // TODO for array whose element types are larger than one byte in size, endian-ness swap eacht element
+        // the struct PROCESS_STATUS_TYPE contains ATTRIBUTES as yet another struct. Just supply the offset, as the other struct has get/set anyway.
         (Record, _) => {
-            // TODO just return a pointer to this records offset
-            return Ok(vec![]);
+            let function_name = function_name_gen("get_struct_base_addr");
+            // getter for address
+            c_code_snippets.push(format!("\
+                // Get struct address `{struct_name}.{field_name}`\n\
+                //\n\
+                // Returns the field `{field_name}`'s struct address from an instance of the `{struct_name}` struct\n\
+                {prefix} {u8}* {function_name}({u8} * struct_base_addr) {{\n\
+                \treturn ({u8}*)(struct_base_addr + {offset_bytes});\n\
+                }}"));
+            return Ok(c_code_snippets)
         }
 
         // we don't know what to do
