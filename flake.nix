@@ -81,10 +81,14 @@
                   mkShell,
                   c-abi-lens,
                   clippy,
+                  rustfmt,
                 }:
                 mkShell {
                   inputsFrom = [ c-abi-lens ];
-                  nativeBuildInputs = [ clippy ];
+                  nativeBuildInputs = [
+                    clippy
+                    rustfmt
+                  ];
                 }
               ) { };
               default = self.devShells.${system}.wasm;
