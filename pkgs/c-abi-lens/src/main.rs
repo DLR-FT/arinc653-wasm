@@ -317,7 +317,7 @@ fn generate_getter_setter(
             // \n\
             // Overwrites the field `{field_name}`'s value of an `{struct_name}` struct instance with `value`, with endianness swapped\n\
             {prefix} void {function_name}({u8} * struct_base_addr, {argument_type}) {{\n\
-            \t*(struct_base_addr + {offset_bytes}) = {byte_swap_fn}(value);\n\
+            \t*({return_type}*)(struct_base_addr + {offset_bytes}) = {byte_swap_fn}(value);\n\
             }}"));
             } else {
                 let function_name = function_name_gen("get");
@@ -337,7 +337,7 @@ fn generate_getter_setter(
             // \n\
             // Overwrites the field `{field_name}`'s value of an `{struct_name}` struct instance with `value`\n\
             {prefix} void {function_name}({u8} * struct_base_addr, {argument_type}) {{\n\
-            \t*(struct_base_addr + {offset_bytes}) = value;\n\
+            \t*({return_type}*)(struct_base_addr + {offset_bytes}) = value;\n\
             }}"));
             }
         }
