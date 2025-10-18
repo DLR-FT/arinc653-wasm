@@ -84,6 +84,30 @@ fn main() -> Result<()> {
         .filter(|e| e.get_kind() == EntityKind::StructDecl)
         .collect::<Vec<_>>();
 
+    // In ARINC653 every type is defined through typedef
+    let typedefs = tu
+        .get_entity()
+        .get_children()
+        .into_iter()
+//        .filter(|e| matches!(
+//            e.get_kind(), EntityKind::TypedefDecl
+////                        | EntityKind::EnumDecl
+//        ))
+        .filter(|e| {
+            if e.get_kind() != EntityKind::TypedefDecl {
+                return false;
+            }
+
+            // Get the canonical type kind if available
+            if let Some(ty) = e.get_type() {
+                let canonical_kind = ty.get_canonical_type().get_kind();
+                canonical_kind != TypeKind::Record
+            } else {
+                false
+            }
+        })
+        .collect::<Vec<_>>();
+
     let mut c_code_snippets = Vec::new();
 
     c_code_snippets.push(format!(
@@ -111,6 +135,53 @@ fn main() -> Result<()> {
 
     c_code_snippets.push("\n\n".into());
 
+    // code gen boilerplate
+    let prefix = "static inline";
+    let namespace_prefix = "camw";
+
+    // Print information about the typedefs
+    // section header for typedefs
+    let section_title = format!(" TYPEDEFs ");
+    c_code_snippets.push(format!("/*{section_title:*^76}*/"));
+    c_code_snippets.push("\n".into());
+
+    // print a table overview of the struct members
+    c_code_snippets.push("/* Typedef overview\n".into());
+    c_code_snippets.push(format!(" *\n"));
+
+    let mut member_overview_table = vec![vec!["field".into(), "size".into()]];
+
+    for typedef_ in &typedefs {
+        let typedef_name = typedef_.get_name().ok_or_eyre("unknown name")?;
+        let typedef_size = typedef_.get_type().ok_or_eyre("uknown type")?.get_sizeof()?;
+
+        member_overview_table.push(vec![
+            typedef_name,
+            format!("{typedef_size} ({typedef_size:#x})"),
+        ]);
+    }
+    let md_table = generate_md_table(member_overview_table);
+    for line in md_table {
+        c_code_snippets.push(format!(" * {line}\n"));
+    }
+
+    c_code_snippets.push(" */\n\n".into());
+
+    for typedef_ in &typedefs {
+        let typedef_ty = typedef_.get_type().ok_or_eyre("struct type is unknown?!")?;
+        let typedef_name = typedef_.get_name().ok_or_eyre("struct has no name")?;
+
+        let new_c_code_snippets = generate_typedef_getter_setter(
+            &typedef_name,
+            typedef_ty,
+            args.endianness_swap,
+        )?;
+
+        c_code_snippets.push(new_c_code_snippets.join("\n\n"));
+        c_code_snippets.push("\n\n".into());
+    }
+
+
     // Print information about the structs
     for struct_ in structs {
         let struct_ty = struct_.get_type().ok_or_eyre("struct type is unknown?!")?;
@@ -123,8 +194,6 @@ fn main() -> Result<()> {
         );
 
         // code gen boilerplate
-        let prefix = "inline";
-        let namespace_prefix = "camw";
         let function_name_gen = |op| format!("{namespace_prefix}_{op}__{struct_name}");
 
         // section header for this struct
@@ -188,9 +257,13 @@ fn main() -> Result<()> {
                 .ok_or_eyre("unknown name")
                 .section(error_note.clone())?;
 
-            let field_offset_bits = struct_ty
-                .get_offsetof(&field_name)
-                .map_err(|e| eyre!("unknown offset").error(e).section(error_note.clone()))?;
+            let field_offset_bits = match struct_ty.get_offsetof(&field_name) {
+                Ok(offset) => offset,
+                Err(_) => {
+                    // Skip this field if offset is unknown
+                    continue;
+                }
+            };
 
             let field_ty = struct_field
                 .get_type()
@@ -258,10 +331,10 @@ fn generate_getter_setter(
 
     let mut c_code_snippets = Vec::new();
 
-    let prefix = "inline";
+    let prefix = "static inline";
     let namespace_prefix = "camw";
     let function_name_gen =
-        |op| format!("{namespace_prefix}_{op}__{struct_name}__{field_name} struct");
+        |op| format!("{namespace_prefix}_{op}__{struct_name}__{field_name}");
     let u8 = "uint8_t";
 
     let type_formatter: Box<dyn FormatToCType>;
@@ -313,7 +386,7 @@ fn generate_getter_setter(
             // \n\
             // Overwrites the field `{field_name}`'s value of an `{struct_name}` struct instance with `value`, with endianness swapped\n\
             {prefix} void {function_name}({u8} * struct_base_addr, {argument_type}) {{\n\
-            \t*(struct_base_addr + {offset_bytes}) = {byte_swap_fn}(value);\n\
+            \t*({return_type}*)(struct_base_addr + {offset_bytes}) = {byte_swap_fn}(value);\n\
             }}"));
             } else {
                 let function_name = function_name_gen("get");
@@ -333,7 +406,7 @@ fn generate_getter_setter(
             // \n\
             // Overwrites the field `{field_name}`'s value of an `{struct_name}` struct instance with `value`\n\
             {prefix} void {function_name}({u8} * struct_base_addr, {argument_type}) {{\n\
-            \t*(struct_base_addr + {offset_bytes}) = value;\n\
+            \t*({return_type}*)(struct_base_addr + {offset_bytes}) = value;\n\
             }}"));
             }
         }
@@ -368,10 +441,18 @@ fn generate_getter_setter(
                 }}"));
         }
 
-        // TODO for array whose element types are larger than one byte in size, endian-ness swap eacht element
+        // the struct PROCESS_STATUS_TYPE contains ATTRIBUTES as yet another struct. Just supply the offset, as the other struct has get/set anyway.
         (Record, _) => {
-            // TODO just return a pointer to this records offset
-            return Ok(vec![]);
+            let function_name = function_name_gen("get_struct_base_addr");
+            // getter for address
+            c_code_snippets.push(format!("\
+                // Get struct address `{struct_name}.{field_name}`\n\
+                //\n\
+                // Returns the field `{field_name}`'s struct address from an instance of the `{struct_name}` struct\n\
+                {prefix} {u8}* {function_name}({u8} * struct_base_addr) {{\n\
+                \treturn ({u8}*)(struct_base_addr + {offset_bytes});\n\
+                }}"));
+            return Ok(c_code_snippets)
         }
 
         // we don't know what to do
@@ -407,6 +488,152 @@ fn generate_getter_setter(
         {prefix} uintptr_t {function_name}() {{\n\
         \treturn {offset_bytes};\n\
         }}",
+    ));
+
+    Ok(c_code_snippets)
+}
+
+fn generate_typedef_getter_setter(
+    typedef_name: &str,
+    ty: clang::Type,
+    swap_endianness: bool,
+) -> Result<Vec<String>> {
+    let mut c_code_snippets = Vec::new();
+
+    let prefix = "static inline";
+    let namespace_prefix = "camw";
+    let function_name_gen =
+    |op| format!("{namespace_prefix}_{op}__{typedef_name}");
+    let u8 = "uint8_t";
+
+    let type_formatter: Box<dyn FormatToCType>;
+
+    // desugar this type so that we know what it actually is
+    let canonical_type = ty.get_canonical_type();
+
+    let section_title = format!(" {typedef_name} ");
+    c_code_snippets.push(format!("/*{section_title:*^76}*/"));
+
+    use TypeKind::*;
+    match (canonical_type.get_kind(), canonical_type.get_element_type()) {
+        // integer or float or pointer
+        (
+            CharS | CharU | SChar | UChar | Short | UShort | Int | UInt | Long | ULong | LongLong
+            | ULongLong | Float | Double | Pointer | Enum,
+         _,
+        ) => {
+            type_formatter = Box::new(CIntegerStdintH::new(canonical_type)?);
+            let return_type = type_formatter.to_function_return_type();
+            let argument_type = type_formatter.to_function_argument_type("value");
+
+            if swap_endianness {
+                let size_of_type_bytes = type_formatter.size_bytes();
+                let byte_swap_fn = match size_of_type_bytes {
+                    1 => "".to_string(),
+                    n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
+                    n => {
+                        bail!(
+                            "unable to perform a byte swap for an integer that is is {n} bytes wide"
+                        )
+                    }
+                };
+
+                let function_name = function_name_gen("get");
+                // getter for integer types
+                c_code_snippets.push(format!("\
+// Get `{typedef_name}`\n\
+//\n\
+// Returns the typedef `{typedef_name}`'s value from memory, with endianness swapped\n\
+{prefix} {return_type} {function_name}({u8} * base_addr) {{\n\
+\treturn {byte_swap_fn}(*({return_type}*)base_addr);\n\
+            }}"));
+
+                let function_name = function_name_gen("set");
+                // setter for integer types
+                c_code_snippets.push(format!("\
+// Set `{typedef_name}` to `value`\n\
+// \n\
+// Overwrites the typedef `{typedef_name}`'s value of an memory location, with endianness swapped\n\
+{prefix} void {function_name}({u8} * base_addr, {argument_type}) {{\n\
+\t*({return_type}*)base_addr = {byte_swap_fn}(value);\n\
+            }}"));
+            } else {
+                let function_name = function_name_gen("get");
+                // getter for integer types
+                c_code_snippets.push(format!("\
+// Get `{typedef_name}`\n\
+//\n\
+// Returns the field `{typedef_name}`'s value from memory\n\
+{prefix} {return_type} {function_name}({u8} * base_addr) {{\n\
+\treturn *({return_type}*)base_addr;\n\
+            }}"));
+
+                let function_name = function_name_gen("set");
+                // setter for integer types
+                c_code_snippets.push(format!("\
+// Set `{typedef_name}` to `value`\n\
+// \n\
+// Overwrites the field `{typedef_name}`'s value of a memory location\n\
+{prefix} void {function_name}({u8} * base_addr, {argument_type}) {{\n\
+\t*({return_type}*)base_addr = value;\n\
+            }}"));
+            }
+        }
+
+        // for arrays whose element type is one byte in size we can just verbatim copy
+        (ConstantArray, Some(element_ty)) if element_ty.get_sizeof() == Ok(1) => {
+            type_formatter = Box::new(CByteArrayType::new(canonical_type)?);
+            let argument_type_dst = type_formatter.to_function_argument_type("dst");
+            let argument_type_src = type_formatter.to_function_argument_type("src");
+            let size_of_type_bytes = type_formatter.size_bytes();
+
+            let function_name = function_name_gen("read");
+            // getter for array types
+            c_code_snippets.push(format!("\
+// Read from `{typedef_name}`\n\
+//\n\
+// Copies from `{typedef_name}` memory location to `destination`\n\
+{prefix} void {function_name}({u8} * base_addr, {argument_type_dst}) {{\n\
+\tfor(uintptr_t i = 0; i < {size_of_type_bytes}; i++)\n\
+\t\tdst[i] = base_addr[i];\n\
+        }}"));
+
+            let function_name = function_name_gen("write");
+            // setter for array types
+            c_code_snippets.push(format!("\
+// Write to `{typedef_name}`\n\
+//\n\
+// Copies from `source` to the `{typedef_name}` memory location\n\
+{prefix} void {function_name}({u8} * base_addr, {argument_type_src}) {{\n\
+\tfor(uintptr_t i = 0; i < {size_of_type_bytes}; i++)\n\
+\t\tbase_addr[i] = src[i];\n\
+        }}"));
+        }
+
+        // (Record, _) -> is filtered out already, as it is handled in the already given generate_getter_setter() effectively also handling typedefs
+
+        // we don't know what to do
+        x => {
+            warn!(
+                "don't know how to represent types of \"{x:?}\" kind\n\
+elaborated type:  {ty:?}\n\
+canonical type:   {canonical_type:?}"
+            );
+            return Ok(vec![]);
+        }
+    }
+
+    let function_name = function_name_gen("sizeof");
+    // helper functions for size of the field
+    c_code_snippets.push(format!(
+        "\
+// sizeof(`{typedef_name})`\n\
+//\n\
+// Returns the size in bytes of the typedef `{typedef_name}`\n\
+{prefix} uintptr_t {function_name}() {{\n\
+\treturn {};\n\
+}}",
+type_formatter.size_bytes()
     ));
 
     Ok(c_code_snippets)
