@@ -4,12 +4,9 @@ use clang::*;
 
 use clap::Parser;
 use cli::Cli;
-use code_gen::{CInclude, CSection, CSnippet, emit_per_field_functions, emit_per_struct_functions};
-use color_eyre::{
-    Result, Section,
-    eyre::{OptionExt, ensure, eyre},
-};
-use log::{debug, info};
+use code_gen::{CInclude, CSection, CSnippet, insert_struct_functions};
+use color_eyre::{Result, eyre::eyre};
+use log::{debug, error};
 
 mod cli;
 mod code_gen;
@@ -95,6 +92,7 @@ fn main() -> Result<()> {
         .into(),
     );
 
+    // add include of stdint.h
     code_snippets.push(CInclude::System("stdint.h".to_owned()).into());
 
     // if endianness swap is desired, include the header file for it
@@ -107,59 +105,11 @@ fn main() -> Result<()> {
 
     // Print information about the structs
     for struct_ in structs {
-        let struct_type = struct_.get_type().ok_or_eyre("struct type is unknown?!")?;
-        let struct_size_bytes = struct_type.get_sizeof()?;
-
-        let struct_name = struct_.get_name().ok_or_eyre("struct has no name")?;
-        info!("generating for struct {struct_name:?}");
-
-        debug!("struct: {struct_name:?} (size: {struct_size_bytes} bytes)");
-
-        // per-struct functions
-        emit_per_struct_functions(&mut code_snippets, &struct_name, struct_type)?;
-        code_snippets.push(CSnippet::Newline);
-
-        // per-struct-field functions
-        for struct_field in struct_.get_children() {
-            ensure!(
-                struct_field.get_kind() == EntityKind::FieldDecl,
-                "all fields of a struct must be of FieldDecl type"
-            );
-
-            // note down the origin of this error
-            let error_note = format!("struct {struct_name:?}, field {struct_field:?}");
-
-            let field_name = struct_field
-                .get_name()
-                .ok_or_eyre("unknown name")
-                .section(error_note.clone())?;
-
-            let (field_offset_bits, field_ty) = match (
-                struct_type.get_offsetof(&field_name),
-                struct_field.get_type(),
-            ) {
-                (Ok(fo), Some(ft)) => (fo, ft),
-                _ => continue,
-                // (Ok(_), None) => todo!(),
-                // (Err(_), None) => todo!(),
-                // (Err(_), Some(_)) => todo!(),
-            };
-
-            debug!(
-                "    field: {:?} (offset: {} bits)",
-                field_name, field_offset_bits
-            );
-
-            emit_per_field_functions(
-                &mut code_snippets,
-                &struct_name,
-                &field_name,
-                field_offset_bits,
-                field_ty,
-                endianness_swap,
-            )?;
+        if let Err(e) = insert_struct_functions(&mut code_snippets, &struct_, endianness_swap) {
+            error!(
+                "skipping to the next struct, because the following error occured while generating struct functions:\n{e}"
+            )
         }
-        code_snippets.push(CSnippet::Newline);
     }
 
     code_snippets.push(CSnippet::Newline);
