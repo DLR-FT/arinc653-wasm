@@ -24,12 +24,16 @@ fn main() -> Result<()> {
         function_decl_prefix,
         comment,
         only_prototype,
-        clang_args,
+        clang_args: clang_args_suffix,
     } = Cli::parse();
 
     // intialize logger
     colog::init();
     color_eyre::install()?;
+
+    // read additional clang args, prepend the CLI args
+    let mut clang_args = c_abi_lens::clang_args_from_env();
+    clang_args.extend(clang_args_suffix);
 
     debug!("initializing clang");
     let clang = Clang::new().map_err(|e| eyre!("error initializing clang:\n{e}"))?;
@@ -41,6 +45,7 @@ fn main() -> Result<()> {
     let mut parser = index.parser(&input_file);
 
     // Pass all clang args
+    debug!("clang args: {clang_args:#?}");
     parser.arguments(&clang_args);
 
     // parse the code into a translation unit
