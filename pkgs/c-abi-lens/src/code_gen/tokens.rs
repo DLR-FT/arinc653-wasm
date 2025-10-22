@@ -121,7 +121,9 @@ impl CFunc {
                 result.push_str(indentation_token);
                 result.push_str(line);
             }
+            result.push('\n');
         }
+        result.remove(result.len() - 1); // remove the final `'\n'`
         result
     }
 

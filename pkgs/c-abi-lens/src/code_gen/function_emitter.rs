@@ -127,6 +127,10 @@ fn emit_per_struct_functions(
 }
 
 /// Insert the [`CSnippets`] for functions related to a given struct's field
+///
+/// # Notes
+///
+/// - `memcpy` instead of direct pointer arithmetic avoids UB from unaligned pointer creation
 fn emit_per_field_functions(
     code_snippets: &mut Vec<CSnippet>,
     struct_name: &str,
@@ -146,13 +150,6 @@ fn emit_per_field_functions(
 
     // desugar this type so that we know what it actually is
     let canonical_type = ty.get_canonical_type();
-
-    // a couple of often reccuring C types
-    let c_void_ptr_ty = RepresentableCType::Opaque { bytes: None };
-    let c_u8_ty = RepresentableCType::Integer {
-        bytes: 1,
-        is_unsigned: true,
-    };
 
     // find a platform agnostic representation of this type
     let generic_c_field_repr = RepresentableCType::new(&canonical_type)?;
@@ -204,23 +201,35 @@ fn emit_per_field_functions(
         ""
     };
 
+    // function/macro to perform byte swapping
+    let byte_swap_fn = match generic_c_field_repr.element_size_bytes()? {
+        1 => "".to_owned(),
+        n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
+        n => {
+            bail!("unable to perform a byte swap for an integer that is {n} bytes wide")
+        }
+    };
+
     use clang::TypeKind::*;
-    match (canonical_type.get_kind(), canonical_type.get_element_type()) {
+    match (
+        canonical_type.get_kind(),
+        canonical_type.get_element_type(),
+        generic_c_field_repr.element_type(),
+    ) {
         // integer or float or pointer
         (
             CharS | CharU | SChar | UChar | Short | UShort | Int | UInt | Long | ULong | LongLong
-            | ULongLong | Float | Double | Pointer | Enum,
-            // TODO really do this for pointer and enum?
+            | ULongLong | Float | Double | Enum,
+            _,
             _,
         ) => {
-            let size_of_type_bytes = generic_c_field_repr.total_size_bytes()?;
-            let byte_swap_fn = match size_of_type_bytes {
-                1 => "".to_owned(),
-                n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
-                n => {
-                    bail!("unable to perform a byte swap for an integer that is {n} bytes wide")
-                }
-            };
+            // C code string that might swap the bytes of `value` or does nothing
+            let maybe_byteswap =
+                if swap_endianness && generic_c_field_repr.element_size_bytes()? != 1 {
+                    format!("value = {byte_swap_fn}(value);\n")
+                } else {
+                    String::default()
+                };
 
             // getter for integer types
             code_snippets.insert(code_snippets.len() -2, CFunc {
@@ -232,13 +241,14 @@ fn emit_per_field_functions(
                 return_type: generic_c_field_repr.clone(),
                 name: function_name_gen("get"),
                 arguments: [
-                    (c_void_ptr_ty.clone(), "struct_base_addr".to_owned())
+                    (RepresentableCType::Opaque { bytes: None }, "struct_base_addr".to_owned())
                 ].into(),
-                body: if swap_endianness {
-                    format!("return {byte_swap_fn}(*({generic_c_field_repr}*)(({generic_c_field_repr}*) struct_base_addr + {offset_bytes}));")
-                }else {
-                    format!("return *({generic_c_field_repr}*)(({generic_c_field_repr}*) struct_base_addr + {offset_bytes});")
-                }
+                body: format!("\
+                    {};\n\
+                    memcpy(&value, ((uint8_t*) struct_base_addr + {offset_bytes}), sizeof(value));\n\
+                    {maybe_byteswap}return value;\
+                    ",generic_c_field_repr.format_as_type(Some("value"))
+                )
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
 
@@ -252,46 +262,60 @@ fn emit_per_field_functions(
                 return_type: RepresentableCType::Void,
                 name: function_name_gen("set"),
                 arguments: [
-                    (c_void_ptr_ty.clone(), "struct_base_addr".to_owned()),
+                    (RepresentableCType::Opaque { bytes: None }, "struct_base_addr".to_owned()),
                     (generic_c_field_repr.clone(), "value".to_owned())
                 ].into(),
-                body: if swap_endianness {
-                    format!("*(({generic_c_field_repr}*) struct_base_addr + {offset_bytes}) = {byte_swap_fn}(value);")
-                }else {
-                    format!("*(({generic_c_field_repr}*) struct_base_addr + {offset_bytes}) = value;")
-                }
+
+                body: format!("\
+                    {maybe_byteswap}\
+                    memcpy(((uint8_t*) struct_base_addr + {offset_bytes}), &value, sizeof(value));\
+                    "
+                )
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
         }
 
-        // for arrays whose element type is one byte in size we can just verbatim copy the elements
-        // TODO be more elegant, add more representations than 1D of u8
-        (ConstantArray, Some(_)) if generic_c_field_repr.element_size_bytes()? == 1 => {
+        // an array of primitive types
+        (
+            ConstantArray,
+            Some(_),
+            RepresentableCType::Integer { .. } | RepresentableCType::Float { .. },
+        ) => {
             let total_bytes = generic_c_field_repr.total_size_bytes()?;
+            let element_bytes = generic_c_field_repr.element_size_bytes()?;
 
-            let return_type = RepresentableCType::Array {
-                element_type: Box::new(c_u8_ty),
-                length: total_bytes,
+            // C code string that copies from `src_name` to `dst_name` and might swap endianness of elements while doing so
+            let copy_and_maybe_byteswap = |src_name, dst_name| {
+                if swap_endianness && element_bytes != 1 {
+                    // endianness swapping on the target type is not possible for the write case,
+                    // because the target addresses within `struct_base_addr` might not be aligned
+                    format!(
+                        "\
+                        for(uintptr_t i = 0; i < {total_bytes}; i++)\n\
+                        \t((uint8_t*){dst_name})[i] = ((uint8_t*){src_name})[i + {} - (i % {element_bytes})];\
+                        ",
+                        element_bytes - 1
+                    )
+                } else {
+                    // fast path, just memcpy bytewise
+                    format!("memcpy((uint8_t*){dst_name}, (uint8_t*){src_name}, {total_bytes});")
+                }
             };
-            let argument_type = return_type.clone();
 
             // getter for array types
             code_snippets.insert(code_snippets.len() -2, CFunc {
                 comment: format!("\
                     Read from `{struct_name}.{field_name}`\n\
                     \n\
-                    Copies from `{field_name}` field of an instance of the `{struct_name}` struct to `destination`\
+                    Copies from `{field_name}` field of an instance of the `{struct_name}` struct to `destination`{maybe_endianness_swapped}\
                 "),
-                return_type: c_void_ptr_ty.clone(),
+                return_type: RepresentableCType::Void,
                 name: function_name_gen("read"),
                 arguments: [
-                    (c_void_ptr_ty.clone(), "struct_base_addr".to_owned()),
-                    (argument_type.clone(), "dst".to_owned())
+                    (RepresentableCType::Opaque { bytes: None }, "struct_base_addr".to_owned()),
+                    (generic_c_field_repr.clone(), "dst".to_owned())
                 ].into(),
-                body: format!("\
-                    for(uintptr_t i = 0; i < {total_bytes}; i++)\n\
-                    \tdst[i] = struct_base_addr[{offset_bytes} + i];\
-                ")
+                body: copy_and_maybe_byteswap("struct_base_addr", "dst")
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
 
@@ -300,24 +324,21 @@ fn emit_per_field_functions(
                 comment: format!("\
                     Write to `{struct_name}.{field_name}`\n\
                     \n\
-                    Copies from `source` to the `{field_name}` field of an `{struct_name}` struct instance\
+                    Copies from `source` to the `{field_name}` field of an `{struct_name}` struct instance{maybe_endianness_swapped}\
                 "),
                 return_type: RepresentableCType::Void,
                 name: function_name_gen("write"),
                 arguments: [
-                    (c_void_ptr_ty.clone(), "struct_base_addr".to_owned()),
-                    (argument_type.clone(), "src".to_owned())
+                    (RepresentableCType::Opaque { bytes: None }, "struct_base_addr".to_owned()),
+                    (generic_c_field_repr.clone(), "src".to_owned())
                 ].into(),
-                body: format!("\
-                    for(uintptr_t i = 0; i < {total_bytes}; i++)\n\
-                    \tstruct_base_addr[{offset_bytes} + i] = src[i];\
-                ")
+                body: copy_and_maybe_byteswap("src", "struct_base_addr")
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
         }
 
         // we don't know what to do, so just hand out a void pointer
-        (type_kind, maybe_type) => {
+        (type_kind, maybe_type, _) => {
             // accessor via void ptr
             code_snippets.insert(code_snippets.len() -2, CFunc {
                 comment: format!("\
@@ -328,12 +349,12 @@ fn emit_per_field_functions(
                     type kind:  {type_kind:?}\n\
                     maybe type: {maybe_type:?}\
                 "),
-                return_type: c_void_ptr_ty.clone(),
+                return_type: RepresentableCType::Opaque { bytes: None },
                 name: function_name_gen("get"),
                 arguments: [
-(                    c_void_ptr_ty.clone(), "struct_base_addr".to_owned()),
+(                    RepresentableCType::Opaque { bytes: None }, "struct_base_addr".to_owned()),
                 ].into(),
-                body: format!("return (void*)(struct_base_addr + {offset_bytes});")
+                body: format!("return (void*)((uint8_t*)struct_base_addr + {offset_bytes});")
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
         }
