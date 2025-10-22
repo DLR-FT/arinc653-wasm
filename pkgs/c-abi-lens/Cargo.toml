@@ -13,5 +13,6 @@ color-eyre = "0.6.5"
 log = "0.4.27"
 
 [dev-dependencies]
+paste = "1.0.15"
 tempfile = "3.23.0"
 test_bin = "0.5.0"
