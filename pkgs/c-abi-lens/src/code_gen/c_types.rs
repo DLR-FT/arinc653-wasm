@@ -98,7 +98,10 @@ impl RepresentableCType {
             Self::Integer {
                 bytes,
                 is_unsigned: false,
-            } => format!("int{bytes}_t{maybe_var_name_with_space_prefix}"),
+            } => {
+                let bits = *bytes as u16 * 8;
+                format!("int{bits}_t{maybe_var_name_with_space_prefix}")
+            }
 
             Self::Float { bytes: 4 } => {
                 format!("float{maybe_var_name_with_space_prefix}")

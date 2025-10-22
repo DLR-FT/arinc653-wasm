@@ -49,8 +49,16 @@ pub struct Cli {
 
     /// Clang arguments
     ///
-    /// These are passed through verbatim to (lib-)clang. Likely you want to set the target architecture here, e.g.
+    /// These are passed through verbatim to (lib-)clang. Likely you want to set the target
+    /// architecture here, e.g.
     ///
     /// -- --target=wasm32-unknown-none
+    ///
+    /// These are prefixed with the space separated contents of either the EXTRA_CLANG_ARGS and/or
+    /// the BINDGEN_EXTRA_CLANG_ARGS environment variables. The intent behind this mechanism is, to
+    /// allow setting up sysroot and other essentials for libclang via environment variables.
+    ///
+    /// In particular, the choice of BINDGEN_EXTRA_CLANG_ARGS makes it so that a Nix build
+    /// environment with the `rustPlatform.bindgenHook` in `nativeBuildInputs` will just work.
     pub clang_args: Vec<String>,
 }
