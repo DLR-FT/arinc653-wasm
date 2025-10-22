@@ -40,7 +40,7 @@ impl RepresentableCType {
             // its an int of some sorts
             (
                 CharS | CharU | SChar | UChar | Short | UShort | Int | UInt | Long | ULong
-                | LongLong | ULongLong,
+                | LongLong | ULongLong | Enum,
                 1 | 2 | 4 | 8,
                 _,
             ) => {

@@ -90,19 +90,21 @@ fn main() -> Result<()> {
                 function_decl_prefix . {function_decl_prefix:?}\n\
                 emit_comment ......... {comment}\n\
                 only_prototype........ {only_prototype}\n\
-                generated_by ......... {TOOL_NAME} v{TOOL_VERSION}\n\n\n\
+                generated_by ......... {TOOL_NAME} v{TOOL_VERSION}\
                 "
             ),
         }
         .into(),
     );
 
-    // add include of stdint.h
+    code_snippets.push(CSnippet::Newline);
+
+    // add include of `stdint.h`
     code_snippets.push(CInclude::System("stdint.h".to_owned()).into());
 
     // if endianness swap is desired, include the header file for it
     if endianness_swap {
-        code_snippets.push(CInclude::System("byteswap.h>".to_owned()).into());
+        code_snippets.push(CInclude::System("byteswap.h".to_owned()).into());
     }
 
     code_snippets.push(CSnippet::Newline);

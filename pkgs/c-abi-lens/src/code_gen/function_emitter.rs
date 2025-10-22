@@ -209,8 +209,7 @@ fn emit_per_field_functions(
         // integer or float or pointer
         (
             CharS | CharU | SChar | UChar | Short | UShort | Int | UInt | Long | ULong | LongLong
-            | ULongLong | Float | Double | Pointer | Enum,
-            // TODO really do this for pointer and enum?
+            | ULongLong | Float | Double | Enum,
             _,
         ) => {
             let size_of_type_bytes = generic_c_field_repr.total_size_bytes()?;
@@ -282,7 +281,7 @@ fn emit_per_field_functions(
                     \n\
                     Copies from `{field_name}` field of an instance of the `{struct_name}` struct to `destination`\
                 "),
-                return_type: c_void_ptr_ty.clone(),
+                return_type: RepresentableCType::Void,
                 name: function_name_gen("read"),
                 arguments: [
                     (c_void_ptr_ty.clone(), "struct_base_addr".to_owned()),
@@ -290,7 +289,7 @@ fn emit_per_field_functions(
                 ].into(),
                 body: format!("\
                     for(uintptr_t i = 0; i < {total_bytes}; i++)\n\
-                    \tdst[i] = struct_base_addr[{offset_bytes} + i];\
+                    \tdst[i] = ((uint8_t*)struct_base_addr)[{offset_bytes} + i];\
                 ")
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
@@ -310,7 +309,7 @@ fn emit_per_field_functions(
                 ].into(),
                 body: format!("\
                     for(uintptr_t i = 0; i < {total_bytes}; i++)\n\
-                    \tstruct_base_addr[{offset_bytes} + i] = src[i];\
+                    \t((uint8_t*)struct_base_addr)[{offset_bytes} + i] = src[i];\
                 ")
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
@@ -333,7 +332,7 @@ fn emit_per_field_functions(
                 arguments: [
 (                    c_void_ptr_ty.clone(), "struct_base_addr".to_owned()),
                 ].into(),
-                body: format!("return (void*)(struct_base_addr + {offset_bytes});")
+                body: format!("return (void*)((uint8_t*)struct_base_addr + {offset_bytes});")
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
         }
