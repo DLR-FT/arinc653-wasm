@@ -113,7 +113,7 @@ fn main() -> Result<()> {
 
     // Print information about the structs
     for struct_ in structs {
-        if let Err(e) = insert_struct_functions(&mut code_snippets, &struct_, endianness_swap) {
+        if let Err(e) = insert_struct_functions(&mut code_snippets, &struct_, endianness_swap, &prefix) {
             error!(
                 "skipping to the next struct, because the following error occured while generating struct functions:\n{e}"
             )

@@ -77,7 +77,7 @@ impl CFunc {
             Default::default()
         };
 
-        let prefix = Self::format_func_prefix(func_decl_prefix);
+        let func_decl_prefix = Self::format_func_prefix(func_decl_prefix);
 
         let args = self.format_args();
 
@@ -87,7 +87,7 @@ impl CFunc {
             ";\n".to_owned()
         };
 
-        format!("{comment}{prefix}{return_type} {name}({args}){body}")
+        format!("{comment}{func_decl_prefix}{return_type} {name}({args}){body}")
     }
 
     /// Format a function prefix followed by a space, or an empty string

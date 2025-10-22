@@ -13,6 +13,7 @@ pub fn insert_struct_functions(
     code_snippets: &mut Vec<CSnippet>,
     struct_: &clang::Entity,
     swap_endianness: bool,
+    namespace_prefix: &str
 ) -> Result<()> {
     let struct_type = struct_.get_type().ok_or_eyre("struct type is unknown?!")?;
     let struct_size_bytes = struct_type.get_sizeof()?;
@@ -23,7 +24,7 @@ pub fn insert_struct_functions(
     debug!("struct: {struct_name:?} (size: {struct_size_bytes} bytes)");
 
     // per-struct functions
-    emit_per_struct_functions(code_snippets, &struct_name, struct_type)?;
+    emit_per_struct_functions(code_snippets, &struct_name, struct_type, namespace_prefix)?;
     code_snippets.push(CSnippet::Newline);
 
     // per-struct-field functions
@@ -75,6 +76,7 @@ pub fn insert_struct_functions(
             field_offset_bits,
             field_ty,
             swap_endianness,
+            namespace_prefix,
         ) {
             error!(
                 "generating the per-field functions for {error_origin} yielded the following error, skipping it\n{e}"
@@ -91,8 +93,8 @@ fn emit_per_struct_functions(
     code_snippets: &mut Vec<CSnippet>,
     struct_name: &str,
     struct_type: clang::Type,
+    namespace_prefix: &str
 ) -> Result<()> {
-    let namespace_prefix = "cal";
     let function_name_gen = |op| format!("{namespace_prefix}_{op}__{struct_name}");
 
     let struct_size_bytes = struct_type.get_sizeof()?;
@@ -138,6 +140,7 @@ fn emit_per_field_functions(
     offset_bits: usize,
     ty: clang::Type,
     swap_endianness: bool,
+    namespace_prefix: &str
 ) -> Result<()> {
     if offset_bits % 8 != 0 {
         bail!("bit offset which is not devisable by 8, this is not implemented yet");
@@ -145,7 +148,6 @@ fn emit_per_field_functions(
 
     let offset_bytes = offset_bits / 8;
 
-    let namespace_prefix = "cal";
     let function_name_gen = |op| format!("{namespace_prefix}_{op}__{struct_name}__{field_name}");
 
     // desugar this type so that we know what it actually is
