@@ -15,7 +15,7 @@ struct IntegerWithArray {
 };
 
 struct MultiDimensionalArray {
-  signed char a[7][11];
+  long a[7][11];
 };
 
 struct NestedStruct {

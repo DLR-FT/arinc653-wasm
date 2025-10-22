@@ -99,8 +99,9 @@ fn main() -> Result<()> {
 
     code_snippets.push(CSnippet::Newline);
 
-    // add include of `stdint.h`
+    // add include of `stdint.h` and `string.h`
     code_snippets.push(CInclude::System("stdint.h".to_owned()).into());
+    code_snippets.push(CInclude::System("string.h".to_owned()).into());
 
     // if endianness swap is desired, include the header file for it
     if endianness_swap {
