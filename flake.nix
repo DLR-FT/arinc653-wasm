@@ -79,13 +79,16 @@
               rust = pkgs.callPackage (
                 {
                   mkShell,
+                  cargo-llvm-cov,
                   c-abi-lens,
                   clippy,
                   rustfmt,
                 }:
                 mkShell {
                   inputsFrom = [ c-abi-lens ];
+                  env = { inherit (cargo-llvm-cov) LLVM_COV LLVM_PROFDATA; };
                   nativeBuildInputs = [
+                    cargo-llvm-cov
                     clippy
                     rustfmt
                   ];
