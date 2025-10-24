@@ -243,7 +243,7 @@ fn emit_per_field_functions(
                 ].into(),
                 body: format!("\
                     {};\n\
-                    memcpy(&value, ((uint8_t*) struct_base_addr + {offset_bytes}), sizeof(value));\n\
+                    memcpy(&value, ((uint8_t *) struct_base_addr + {offset_bytes}), sizeof(value));\n\
                     {maybe_byteswap}return value;\
                     ",generic_c_field_repr.format_as_type(Some("value"))
                 )
@@ -266,7 +266,7 @@ fn emit_per_field_functions(
 
                 body: format!("\
                     {maybe_byteswap}\
-                    memcpy(((uint8_t*) struct_base_addr + {offset_bytes}), &value, sizeof(value));\
+                    memcpy(((uint8_t *) struct_base_addr + {offset_bytes}), &value, sizeof(value));\
                     "
                 )
             }.into());
@@ -290,13 +290,13 @@ fn emit_per_field_functions(
                     format!(
                         "\
                         for(uintptr_t i = 0; i < {total_bytes}; i++)\n\
-                        \t((uint8_t*){dst_name})[i] = ((uint8_t*){src_name})[i + {} - (i % {element_bytes})];\
+                        \t((uint8_t *){dst_name})[i] = ((uint8_t *){src_name})[i + {} - (i % {element_bytes})];\
                         ",
                         element_bytes - 1
                     )
                 } else {
                     // fast path, just memcpy bytewise
-                    format!("memcpy((uint8_t*){dst_name}, (uint8_t*){src_name}, {total_bytes});")
+                    format!("memcpy((uint8_t *){dst_name}, (uint8_t *){src_name}, {total_bytes});")
                 }
             };
 
@@ -352,7 +352,7 @@ fn emit_per_field_functions(
                 arguments: [
 (                    RepresentableCType::Opaque { bytes: None }, "struct_base_addr".to_owned()),
                 ].into(),
-                body: format!("return (void*)((uint8_t*)struct_base_addr + {offset_bytes});")
+                body: format!("return (void *)((uint8_t *)struct_base_addr + {offset_bytes});")
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
         }

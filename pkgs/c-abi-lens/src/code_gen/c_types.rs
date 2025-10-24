@@ -122,7 +122,7 @@ impl RepresentableCType {
                 base_type
             }
             Self::Opaque { bytes: _ } => {
-                format!("void*{maybe_var_name_with_space_prefix}")
+                format!("void *{maybe_var_name_with_space_prefix}")
             }
             Self::UIntPtr => "uintptr_t".into(),
             Self::Void => "void".into(),
