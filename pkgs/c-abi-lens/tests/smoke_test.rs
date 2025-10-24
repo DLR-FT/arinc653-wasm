@@ -69,3 +69,4 @@ gen_test! {"comment", "only-prototype"}
 gen_test! {"prefix" = ["funky_prefix"], "comment", "only-prototype"}
 gen_test! {"function-decl-prefix" = [ "inline" ], "comment"}
 gen_test! {"function-decl-prefix" = [ "static" "inline" ], "comment"}
+gen_test! {"function-decl-prefix" = [ "static" "inline" ], "comment", "endianness-swap"}

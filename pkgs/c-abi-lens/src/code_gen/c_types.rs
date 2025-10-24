@@ -33,7 +33,6 @@ impl RepresentableCType {
         let kind = type_.get_kind();
         let size_of = type_.get_sizeof()?;
         let element_type = type_.get_element_type().map(|et| Self::new(&et));
-        // let element_type_size_of = element_type.map(|et| et.get_sizeof()).transpose()?;
 
         use TypeKind::*;
         match (kind, size_of, element_type) {
@@ -122,7 +121,7 @@ impl RepresentableCType {
                 base_type
             }
             Self::Opaque { bytes: _ } => {
-                format!("void*{maybe_var_name_with_space_prefix}")
+                format!("void *{maybe_var_name_with_space_prefix}")
             }
             Self::UIntPtr => "uintptr_t".into(),
             Self::Void => "void".into(),
@@ -153,6 +152,9 @@ impl RepresentableCType {
         })
     }
 
+    // Get the element type if this is a an array, or self otherwise
+    //
+    // Works for nested arrays too
     pub fn element_type(&self) -> RepresentableCType {
         match self {
             Self::Array { element_type, .. } => {
@@ -204,7 +206,6 @@ impl RepresentableCType {
     /// Recurse into a nested type, calling a closure for each layer
     ///
     /// Implemented without function recursion.
-    ///
     fn recurse_into_type<F: FnMut(&RepresentableCType, bool, bool)>(&self, mut f: F) {
         let mut c_type = self;
         let mut next_c_type = self;
@@ -251,6 +252,77 @@ mod test {
     use super::RepresentableCType;
 
     #[test]
+    fn test_format_integer_types() {
+        let types = [1, 2, 4, 8];
+        let types_formatted = types
+            .iter()
+            .map(|b| RepresentableCType::Integer {
+                bytes: *b,
+                is_unsigned: false,
+            })
+            .map(|t| t.to_string());
+
+        let expected = ["int8_t", "int16_t", "int32_t", "int64_t"];
+
+        assert_eq!(types.len(), expected.len());
+
+        for (got, expected) in types_formatted.zip(expected.iter()) {
+            assert_eq!(got, *expected);
+        }
+    }
+
+    #[test]
+    fn test_format_unsigned_integer_types() {
+        let types = [1, 2, 4, 8];
+        let types_formatted = types
+            .iter()
+            .map(|b| RepresentableCType::Integer {
+                bytes: *b,
+                is_unsigned: true,
+            })
+            .map(|t| t.to_string());
+
+        let expected = ["uint8_t", "uint16_t", "uint32_t", "uint64_t"];
+
+        assert_eq!(types.len(), expected.len());
+
+        for (got, expected) in types_formatted.zip(expected.iter()) {
+            assert_eq!(got, *expected);
+        }
+    }
+
+    #[test]
+    fn test_format_float_types() {
+        let types = [4, 8];
+        let types_formatted = types
+            .iter()
+            .map(|b| RepresentableCType::Float { bytes: *b })
+            .map(|t| t.to_string());
+
+        let expected = ["float", "double"];
+
+        assert_eq!(types.len(), expected.len());
+
+        for (got, expected) in types_formatted.zip(expected.iter()) {
+            assert_eq!(got, *expected);
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_format_illegal_float_types() {
+        let _ = RepresentableCType::Float { bytes: 3 }.to_string();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_format_unsized_element_size() {
+        let _ = RepresentableCType::Opaque { bytes: None }
+            .element_size_bytes()
+            .unwrap();
+    }
+
+    #[test]
     fn test_format_array() {
         let arr = RepresentableCType::Array {
             element_type: Box::new(RepresentableCType::Array {
@@ -264,5 +336,37 @@ mod test {
         };
 
         assert_eq!(arr.format_as_type(Some("arr")), "uint32_t arr[7][11]")
+    }
+
+    #[test]
+    fn test_format_opaque_types() {
+        let types = [
+            None,
+            Some(u64::MIN),
+            Some(1),
+            Some(2),
+            Some(3),
+            Some(u64::MAX),
+        ];
+        let types_formatted = types
+            .iter()
+            .map(|b| RepresentableCType::Opaque { bytes: *b })
+            .map(|t| t.to_string());
+
+        let expected = std::iter::repeat("void *");
+
+        for (got, expected) in types_formatted.zip(expected) {
+            assert_eq!(got, *expected);
+        }
+    }
+
+    #[test]
+    fn test_format_uintptr_type() {
+        assert_eq!(RepresentableCType::UIntPtr.to_string(), "uintptr_t");
+    }
+
+    #[test]
+    fn test_format_void_type() {
+        assert_eq!(RepresentableCType::Void.to_string(), "void");
     }
 }

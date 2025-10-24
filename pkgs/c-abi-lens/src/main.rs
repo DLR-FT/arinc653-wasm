@@ -1,3 +1,7 @@
+#![doc = include_str!("../README.md")]
+#![deny(unsafe_code)]
+#![deny(missing_docs)]
+
 use std::{fs::File, io::Write};
 
 use clang::*;
