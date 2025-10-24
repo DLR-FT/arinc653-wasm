@@ -58,3 +58,7 @@ $0 ~/SYSTEM_ADDRESS_TYPE\s+ENTRY_POINT/ {
   gsub("<an APEX integer type>", "APEX_LONG_INTEGER     ");
   print;
 }
+
+END {
+  print "#include \"private/wasm_apex_proc_alloc.h\""
+}
