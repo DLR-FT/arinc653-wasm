@@ -92,8 +92,7 @@ fn emit_per_struct_functions(
     struct_name: &str,
     struct_type: clang::Type,
 ) -> Result<()> {
-    let namespace_prefix = "cal";
-    let function_name_gen = |op| format!("{namespace_prefix}_{op}__{struct_name}");
+    let function_name_gen = |op| format!("{op}__{struct_name}");
 
     let struct_size_bytes = struct_type.get_sizeof()?;
 
@@ -145,8 +144,7 @@ fn emit_per_field_functions(
 
     let offset_bytes = offset_bits / 8;
 
-    let namespace_prefix = "cal";
-    let function_name_gen = |op| format!("{namespace_prefix}_{op}__{struct_name}__{field_name}");
+    let function_name_gen = |op| format!("{op}__{struct_name}__{field_name}");
 
     // desugar this type so that we know what it actually is
     let canonical_type = ty.get_canonical_type();

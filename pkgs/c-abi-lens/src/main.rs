@@ -122,6 +122,16 @@ fn main() -> Result<()> {
 
     code_snippets.push(CSnippet::Newline);
 
+    // apply prefix to all function names, if its not an empty string
+    if !prefix.is_empty() {
+        debug!("applying function prefixes");
+        for snippet in &mut code_snippets {
+            if let CSnippet::Func(code_gen::CFunc { name, .. }) = snippet {
+                *name = format!("{prefix}_{name}")
+            }
+        }
+    }
+
     debug!("done generating code, writing output");
 
     // assmeble the code
