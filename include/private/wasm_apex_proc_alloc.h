@@ -1,3 +1,6 @@
+#ifndef APEX_WASM_PROCESS_UTILS
+#define APEX_WASM_PROCESS_UTILS
+
 /* # Purpose
  *
  * This file serves as prototyping stage for the custom assembly that prepares a
@@ -68,8 +71,6 @@
  * wasm32-unknown-wasi-cc -pthread <THIS_FILE> -Oz -S -o wasm_apex_proc_alloc.s
  */
 
-#ifndef APEX_WASM_PROCESS_UTILS
-#define APEX_WASM_PROCESS_UTILS
 
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -77,6 +78,7 @@
 
 // define the maxium number of processes
 #ifndef SYSTEM_LIMIT_NUMBER_OF_PROCESSES
+#pragma message ("SYSTEM_LIMIT_NUMBER_OF_PROCESSES is not defined, defaulting to 128")
 #define SYSTEM_LIMIT_NUMBER_OF_PROCESSES 128
 #endif
 
@@ -134,6 +136,7 @@ __apex_wasm_proc_alloc(void) {
       // get volatile pointer to the stack end
       // take one of the last elements, as the stack grows downwards
       // don't literally take the last element, get some nice alignment on the pointer
+      // TODO check whether the subtraction is necessary at all?
       volatile void *new_stack_pointer = &(__apex_wasm_thread_slots[i].ss[APEX_WASM_SS_SIZE - 8]);
 
       // get volatile pointer to the tls start

@@ -7,5 +7,3 @@ int main(void) {
 
   CREATE_PROCESS(&pa, &pid, &err);
 }
-
-#include "wasm_apex_proc_alloc.h"
