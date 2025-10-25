@@ -1,3 +1,6 @@
+#ifndef APEX_WASM_PROCESS_UTILS
+#define APEX_WASM_PROCESS_UTILS
+
 /* # Purpose
  *
  * This file serves as prototyping stage for the custom assembly that prepares a
@@ -68,8 +71,6 @@
  * wasm32-unknown-wasi-cc -pthread <THIS_FILE> -Oz -S -o wasm_apex_proc_alloc.s
  */
 
-#ifndef APEX_WASM_PROCESS_UTILS
-#define APEX_WASM_PROCESS_UTILS
 
 #include <stdatomic.h>
 #include <stdbool.h>
