@@ -71,14 +71,14 @@
  * wasm32-unknown-wasi-cc -pthread <THIS_FILE> -Oz -S -o wasm_apex_proc_alloc.s
  */
 
-
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 // define the maxium number of processes
 #ifndef SYSTEM_LIMIT_NUMBER_OF_PROCESSES
-#pragma message ("SYSTEM_LIMIT_NUMBER_OF_PROCESSES is not defined, defaulting to 128")
+#pragma message(                                                               \
+    "SYSTEM_LIMIT_NUMBER_OF_PROCESSES is not defined, defaulting to 128")
 #define SYSTEM_LIMIT_NUMBER_OF_PROCESSES 128
 #endif
 
@@ -93,10 +93,38 @@
 #endif
 
 // declare the __apex_asm_proc_id global
-__asm__(".globaltype __apex_wasm_proc_id, i32\n"
-        "__apex_wasm_proc_id:\n");
+__asm__("\
+.global __apex_wasm_proc_id\n\
+.export_name __apex_wasm_proc_id, __apex_wasm_proc_id\n\
+.globaltype __apex_wasm_proc_id, i32\n\
+__apex_wasm_proc_id:\n\
+.global        my_global_var, i32, x\n\
+");
 
-// (re-)declare the __tls_base global (if its not declared alredy)
+// define default values
+// __asm__(".section .globals,\"\",@\n"
+//         ".globaltype my_global, i32, immutable\n"
+// "\
+// .section  .data.my_global,\"\",@\n\
+// .global  my_global\n\
+// my_global:\n\
+// .int32 3\n\
+// .size my_global, 5\n\
+// "
+// "\
+// .section  .tdata.tls7,\"\",@\n\
+// .globl  tls7\n\
+// .p2align  3\n\
+// tls7:\n\
+//   .int32  1\n\
+//   .size tls7, 4\n\
+// "
+// );
+// "
+// ".globaldata my_global_var, i32, 42\n");
+// ".int32 5\n");
+
+// (re-)declare the __tls_base global type (if its not declared alredy)
 __asm__(".globaltype __tls_base, i32\n");
 
 // struct holding the per-thread global state
@@ -135,9 +163,11 @@ __apex_wasm_proc_alloc(void) {
 
       // get volatile pointer to the stack end
       // take one of the last elements, as the stack grows downwards
-      // don't literally take the last element, get some nice alignment on the pointer
+      // don't literally take the last element, get some nice alignment on the
+      // pointer
       // TODO check whether the subtraction is necessary at all?
-      volatile void *new_stack_pointer = &(__apex_wasm_thread_slots[i].ss[APEX_WASM_SS_SIZE - 8]);
+      volatile void *new_stack_pointer =
+          &(__apex_wasm_thread_slots[i].ss[APEX_WASM_SS_SIZE - 8]);
 
       // get volatile pointer to the tls start
       volatile void *new_tls_base = &(__apex_wasm_thread_slots[i].tls);

@@ -7,7 +7,6 @@
 - [Example of WebAssembly `.s` files](https://github.com/WebAssembly/wasi-libc/blob/1590774d836c482e1c6e480b122214a01c822b50/libc-top-half/musl/src/thread/wasm32/wasi_thread_start.s#L6)
 - [WebAssembly-LLVM-Assembly parser implementation](https://llvm.org/doxygen/WebAssemblyAsmParser_8cpp_source.html)
 
-
 # Rationale
 
 - **Choice**: `<an APEX integer type>` -> `APEX_LONG_INTEGER`

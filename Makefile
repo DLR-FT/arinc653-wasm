@@ -10,6 +10,8 @@ C_FLAGS_RELEASE     = $(C_FLAGS) -Oz
 LD_FLAGS            = --export-memory --export-table --export=main
 LD_FLAGS           += --import-memory --no-entry
 LD_FLAGS           += --shared-memory --stack-first --unresolved-symbols=report-all
+# LD_FLAGS           += --no-gc-sections
+# LD_FLAGS           += --export=__apex_wasm_system_limit_number_of_partitions
 
 EMPTY              :=
 COMMA              := ,

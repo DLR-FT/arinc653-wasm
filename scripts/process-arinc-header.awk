@@ -49,6 +49,14 @@ $0 ~/SYSTEM_ADDRESS_TYPE\s+ENTRY_POINT/ {
   printf("%-8s %s\n", "#ifndef", define_ident);
   printf("%-8s %-38s %s\n", $1, $2, $3);
   print "#endif";
+
+  # __asm__(".globaltype __apex_wasm_system_limit_number_of_partitions, i32, immutable\n"
+  #         ".data\n"
+  #         "__apex_wasm_system_limit_number_of_partitions:\n"
+  #         ".int32 5\n"
+  #         ".text\n"
+  #  );
+  
   next;
 }
 
