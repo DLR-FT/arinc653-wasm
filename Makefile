@@ -29,6 +29,7 @@ SRC_DIR             = src
 SRC_EXT             = c
 WASM_EXT            = wasm
 WAT_EXT             = wat
+ASM_EXT             = S
 LAYOUT_EXT          = layout.txt
 
 
@@ -39,11 +40,12 @@ SOURCES             = $(shell find $(SRC_DIR) -type f -name *.$(SRC_EXT))
 WASM_FILES_DEBUG    = $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/debug/%, $(SOURCES:.$(SRC_EXT)=.$(WASM_EXT)))
 WASM_FILES_RELEASE  = $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/release/%, $(SOURCES:.$(SRC_EXT)=.$(WASM_EXT)))
 WAT_FILES           = $(WASM_FILES_DEBUG:.$(WASM_EXT)=.$(WAT_EXT)) $(WASM_FILES_RELEASE:.$(WASM_EXT)=.$(WAT_EXT))
+ASM_FILES           = $(WASM_FILES_DEBUG:.$(WASM_EXT)=.$(ASM_EXT)) $(WASM_FILES_RELEASE:.$(WASM_EXT)=.$(ASM_EXT))
 
 SRC_LAYOUTS         = $(addsuffix .$(LAYOUT_EXT), $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/layouts/%, $(SOURCES)))
 HEADER_LAYOUTS      = $(addsuffix .$(LAYOUT_EXT), $(patsubst $(INC_DIR)/%, $(TARGET_DIR)/layouts/%, $(HEADERS)))
 
-ALL_TARGET_FILES    = $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE) $(WAT_FILES) $(SRC_LAYOUTS) $(HEADER_LAYOUTS) $(GENERATED_HEADERS) compile_commands.json
+ALL_TARGET_FILES    = $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE) $(WAT_FILES) $(ASM_FILES) $(SRC_LAYOUTS) $(HEADER_LAYOUTS) $(GENERATED_HEADERS) compile_commands.json
 
 COMPILE_REQUISITES  = $(GENERATED_HEADERS)
 
@@ -94,10 +96,20 @@ $(TARGET_DIR)/debug/%.$(WASM_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES
 	@mkdir -p -- $(@D)/cdb-fragments
 	$(CC) $(C_FLAGS_DEBUG) -gen-cdb-fragment-path $(@D)/cdb-fragments -o$@ -- $<
 
+# rule to compile C to WebAssembly-LLVM-Assembly in debug mode
+$(TARGET_DIR)/debug/%.$(ASM_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
+	@mkdir -p -- $(@D)/cdb-fragments
+	$(CC) $(C_FLAGS_DEBUG) -gen-cdb-fragment-path $(@D)/cdb-fragments -S -o$@ -- $<
+
 # rule to compile C to Wasm in release mode
 $(TARGET_DIR)/release/%.$(WASM_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
 	@mkdir -p -- $(@D)/cdb-fragments
 	$(CC) $(C_FLAGS_RELEASE) -gen-cdb-fragment-path $(@D)/cdb-fragments -o$@ -- $<
+
+# rule to compile C to WebAssembly-LLVM-Assembly in debug mode
+$(TARGET_DIR)/release/%.$(ASM_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
+	@mkdir -p -- $(@D)/cdb-fragments
+	$(CC) $(C_FLAGS_DEBUG) -gen-cdb-fragment-path $(@D)/cdb-fragments -S -o$@ -- $<
 
 # rule to concatenate a compile_commands.json
 compile_commands.json: $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE)
