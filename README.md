@@ -15,6 +15,8 @@
   **Reason**: Each partition has multiple processes, which are guaranteed to have a shared address space (ARINC 653 P1-5 chapter 2.3.2). The only way to achieve this is if they have shared linear memory. To cause that, they all need to import the linear memory.
 - **Choice**: export the function table (via `--export-table` linker flag)
   **Reason**: In order for the `CREATE_PROCESS` call to succeed, the host environment needs to be able to call a guest environment function identified via an index into said table. Exporting the table ensures that the funcref table is accessible from the host environment.
+- **Choice**: Do not use `__externref_t` for function pointers, e.g. the `ENTRY_POINT` argument in the `CREATE_ERROR_HANDLER` function.
+  **Reason**: `__externref_t` is not representable in Linear Memory. Hence, it can not become the field of a struct. However, the `PROCESS_ATTRIBUTE_TYPE` struct comprises an `ENTRY_POINT` field holding a function pointer. As `__externref_t` can not be used there, it is necessary to expose the table for function pointers. Therefore, any use of `__externref_t` shall be avoided, in order to keep all function pointer representations consistent.
 
 # Legal Matter
 
