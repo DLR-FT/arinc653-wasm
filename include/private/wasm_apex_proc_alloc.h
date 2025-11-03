@@ -125,36 +125,61 @@ __attribute__((export_name("__apex_wasm_proc_alloc"))) _Bool
 __apex_wasm_proc_alloc(void) {
   for (uintptr_t i = 0; i < SYSTEM_LIMIT_NUMBER_OF_PROCESSES; i++) {
 
-    // define false as stack var, we need to pass them via pointer
-    _Bool false_inst = false;
+    _Bool swap_unsuccessful = true;
 
-    // BUG we take the address of this local variable, thus implicating that
-    // there already is a secondary stack, but the secondary stack was not yet
-    // set up!
+    // Effect of the `i32.atomic.rmw8.cmpxchg_u` operation:
+    //
+    // Let the stack be:
+    //
+    //     c3 <- Stack Pointer
+    //     c2
+    //      i
+    //     ...
+    //
+    //
+    // Pop c3, c2, i.
+    //
+    // Then let:
+    //
+    //     ea  := i + memarg.offset // address in linear memory
+    //     cr  := load(ea)          // current value of memory at address ea
+    //     cex := c2                // expected value
+    //
+    // Then if cr == cex:
+    //
+    //     cw  := c3
+    //     store(ea, cw)
+    //
+    // Finally:
+    //
+    //     c1  := cr
+    //
+    // and push c1 to the stack
+    __asm__("local.get %[address]\n"  // ea
+            "i32.const %[expected]\n" // c2
+            "i32.const %[desired]\n"  // c3
+            "i32.atomic.rmw8.cmpxchg_u 0\n"
+            "local.set %[previous_value]\n"
+            : [previous_value] "=r"(swap_unsuccessful)
+            : [address] "p"(&__apex_wasm_proc_slots[i]), [expected] "i"(false),
+              [desired] "i"(true));
 
     // find an unused slot
-    if (atomic_compare_exchange_strong(&__apex_wasm_proc_usage_markers[i],
-                                       &false_inst, true))
+    if (!swap_unsuccessful)
     // slot was unused
     {
 
-      // get volatile pointer to the stack end
+      // set stack pointer
       // take one of the last elements, as the stack grows downwards
       // don't literally take the last element, get some nice alignment on the
       // pointer
-      volatile void *new_stack_pointer =
-          &(__apex_wasm_proc_slots[i].ss[APEX_WASM_SS_SIZE - 8]);
-
-      // get volatile pointer to the tls start
-      volatile void *new_tls_base = &(__apex_wasm_proc_slots[i].tls);
-
-      // set stack pointer
       __asm__("local.get %0\n"
-              "global.set __stack_pointer\n" ::"r"(new_stack_pointer));
+              "global.set __stack_pointer\n" ::"p"(
+                  &(__apex_wasm_proc_slots[i].ss[APEX_WASM_SS_SIZE - 8])));
 
       // set tls base
       __asm__("local.get %0\n"
-              "global.set __tls_base\n" ::"r"(new_tls_base));
+              "global.set __tls_base\n" ::"r"(__apex_wasm_proc_slots[i].tls));
 
       // // set own process id
       __asm__("local.get %0\n"
@@ -177,25 +202,23 @@ __apex_wasm_proc_alloc(void) {
 // free this stack
 __attribute__((export_name("__apex_wasm_proc_free"))) void
 __apex_wasm_proc_free(void) {
-  uint32_t my_process_id = 0;
+  __asm__(
+      // invalidate stack pointer
+      "i32.const %[invalid_addr]\n"
+      "global.set __stack_pointer\n"
 
-  // get this thead's id
-  __asm__("global.get __apex_wasm_proc_idx\n"
-          "local.set %0\n"
-          : "=r"(my_process_id));
+      // invalidate TLS base
+      "i32.const %[invalid_addr]\n"
+      "global.set __tls_base\n"
 
-  uint32_t invalid_addr = UINT32_MAX;
-
-  // invalidate stack pointer
-  __asm__("local.get %0\n"
-          "global.set __stack_pointer\n" ::"r"(invalid_addr));
-
-  // invalidate TLS base
-  __asm__("local.get %0\n"
-          "global.set __tls_base\n" ::"r"(invalid_addr));
-
-  // mark thread as free
-  atomic_store(&__apex_wasm_proc_usage_markers[my_process_id], false);
+      // mark slot as free
+      "i32.const %[marker_base_addr]\n"   // base-address
+      "global.get __apex_wasm_proc_idx\n" // index
+      "i32.add\n"                         // address := baseaddres + index
+      "i32.const %[false_inst]\n"         // false as a const
+      "i32.atomic.store8  0\n" ::[invalid_addr] "i"(UINT32_MAX),
+      [marker_base_addr] "i"(__apex_wasm_proc_usage_markers),
+      [false_inst] "i"(false));
 }
 
 #endif
