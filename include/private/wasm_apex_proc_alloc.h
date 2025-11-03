@@ -118,84 +118,48 @@ struct __apex_wasm_proc
 // True if this slot is currently used
 _Atomic _Bool __apex_wasm_proc_usage_markers[SYSTEM_LIMIT_NUMBER_OF_PROCESSES];
 
-
 // from the `__apex_wasm_proc_slots` allocate the first unused one to host
 // this thread's secondary stack and thread local storage
 __attribute__((export_name("__apex_wasm_proc_alloc"))) _Bool
 __apex_wasm_proc_alloc(void) {
-  for (uintptr_t i = 0; i < SYSTEM_LIMIT_NUMBER_OF_PROCESSES; i++) {
+  int32_t loop_counter = 0;
 
-    _Bool swap_unsuccessful = true;
+  __asm__(
+      "i32.const 0\n"
+      "local.set %[loop_counter]\n"
+      "loop\n"
 
-    // Effect of the `i32.atomic.rmw8.cmpxchg_u` operation:
-    //
-    // Let the stack be:
-    //
-    //     c3 <- Stack Pointer
-    //     c2
-    //      i
-    //     ...
-    //
-    //
-    // Pop c3, c2, i.
-    //
-    // Then let:
-    //
-    //     ea  := i + memarg.offset // address in linear memory
-    //     cr  := load(ea)          // current value of memory at address ea
-    //     cex := c2                // expected value
-    //
-    // Then if cr == cex:
-    //
-    //     cw  := c3
-    //     store(ea, cw)
-    //
-    // Finally:
-    //
-    //     c1  := cr
-    //
-    // and push c1 to the stack
-    __asm__("local.get %[address]\n"  // ea
-            "i32.const %[expected]\n" // c2
-            "i32.const %[desired]\n"  // c3
-            "i32.atomic.rmw8.cmpxchg_u 0\n"
-            "local.set %[previous_value]\n"
-            : [previous_value] "=r"(swap_unsuccessful)
-            : [address] "p"(&__apex_wasm_proc_slots[i]), [expected] "i"(false),
-              [desired] "i"(true));
+      // check if the current ith slot is used
+      // cmpxchg returns false if slot was vacant and is now allocated
+      "local.get %[loop_counter]\n" // index
+      "i32.const %[false_inst]\n"   // expected
+      "i32.const %[true_inst]\n"    // desired
+      "i32.atomic.rmw8.cmpxchg_u %[base_address]\n"
 
-    // find an unused slot
-    if (!swap_unsuccessful)
-    // slot was unused
-    {
+      "if\n"
+      "else\n"
+      "i32.const %[true_inst]\n"
+      "return\n"
+      "end_if\n"
 
-      // set stack pointer
-      // take one of the last elements, as the stack grows downwards
-      // don't literally take the last element, get some nice alignment on the
-      // pointer
-      __asm__("local.get %0\n"
-              "global.set __stack_pointer\n" ::"p"(
-                  &(__apex_wasm_proc_slots[i].ss[APEX_WASM_SS_SIZE - 8])));
+      // increment i by 1
+      "i32.const 1\n"
+      "local.get %[loop_counter]\n"
+      "i32.add\n"
+      "local.tee %[loop_counter]\n" // also keeps a copy of i on the stack for
+                                    // the next step
 
-      // set tls base
-      __asm__("local.get %0\n"
-              "global.set __tls_base\n" ::"r"(__apex_wasm_proc_slots[i].tls));
+      // if i != SYSTEM_LIMIT_NUMBER_OF_PROCESSES, jump to beginning of the loop
+      "i32.const %[num_of_procs]\n"
+      "i32.ne\n"
+      "br_if 0\n" // jumps to loop head
+      "end_loop\n" ::[loop_counter] "r"(
+          loop_counter), // index to the local holding the loops counter var
+      [num_of_procs] "i"(SYSTEM_LIMIT_NUMBER_OF_PROCESSES),
+      [base_address] "p"(&__apex_wasm_proc_slots), [true_inst] "i"(true),
+      [false_inst] "i"(false));
 
-      // // set own process id
-      __asm__("local.get %0\n"
-              "global.set __apex_wasm_proc_idx\n" ::"r"(i));
-
-      // TODO maye zeroize ss & tls?
-
-      // success!
-      return true;
-    }
-    // slot is already used, check next one
-    else
-      continue;
-  }
-
-  // no free slot was found!
+  // per default, we assume failure
   return false;
 }
 
