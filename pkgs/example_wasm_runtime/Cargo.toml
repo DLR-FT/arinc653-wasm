@@ -1,0 +1,13 @@
+[package]
+name = "example_wasm_runtime"
+version = "0.1.0"
+edition = "2024"
+description = "a simple wasmtime configuration with host supplied shared memory"
+homepage = "https://github.com/DLR-FT/arinc653-wasm"
+
+[profile.release]
+overflow-checks = true # we don't care about the performance overhead, but no error shall be masked
+
+[dependencies]
+clap = { version = "4.5.51", features = ["derive"] }
+wasmtime = "36.0.2"
