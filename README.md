@@ -17,6 +17,8 @@
   **Reason**: In order for the `CREATE_PROCESS` call to succeed, the host environment needs to be able to call a guest environment function identified via an index into said table. Exporting the table ensures that the funcref table is accessible from the host environment.
 - **Choice**: Do not use `__externref_t` for function pointers, e.g. the `ENTRY_POINT` argument in the `CREATE_ERROR_HANDLER` function.
   **Reason**: `__externref_t` is not representable in Linear Memory. Hence, it can not become the field of a struct. However, the `PROCESS_ATTRIBUTE_TYPE` struct comprises an `ENTRY_POINT` field holding a function pointer. As `__externref_t` can not be used there, it is necessary to expose the table for function pointers. Therefore, any use of `__externref_t` shall be avoided, in order to keep all function pointer representations consistent.
+- **Choice**: Use `__wasm__` preprocessor `#define` to conditionally annotate official APEX header functions with `import_module` & `import_name` attributes.
+  **Reason**: Clang is the sole compiler, that is capable to compile C to Wasm reasonably. Heaving two headers, one without and one with Wasm specific annotations, is unfavorable.
 
 # Legal Matter
 
