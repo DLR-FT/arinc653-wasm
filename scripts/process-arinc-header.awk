@@ -12,10 +12,12 @@ BEGIN {
   # make sure integer types with guaranteed bit width are available
   print "#include <stdint.h>"
 
+  print("#ifndef  WASM_IMPORT_MODULE")
   print("#ifdef  __wasm__")
   print("#define  WASM_IMPORT_MODULE(module, name)  __attribute__((import_module(module), import_name(name)))")
   print("#else")
   print("#define  WASM_IMPORT_MODULE(module, name)")
+  print("#endif")
   print("#endif")
 }
 
