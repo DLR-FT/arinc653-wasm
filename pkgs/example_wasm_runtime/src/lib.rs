@@ -1,9 +1,56 @@
 use wasmtime::*;
+
+fn infer_shared_mem_type(
+    modules: Vec<Module>,
+    host_module_name: &str,
+    shared_memory_name: &str,
+) -> Option<(u32, Option<u32>)> {
+    // https://webassembly.github.io/threads/core/valid/types.html#import-subtyping
+
+    let mut n1: u32 = 0; // smallest possible minimum
+    let mut m1: Option<u32> = None; // largest possible maximum
+
+    for module in modules {
+        let mem_type = module.imports().find_map(|import| {
+            if import.module() != host_module_name || import.name() != shared_memory_name {
+                return None;
+            }
+            match import.ty() {
+                ExternType::Memory(memory_type) => {
+                    if memory_type.is_shared() {
+                        Some(memory_type)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        });
+        let Some(mem_type) = mem_type else {
+            return None;
+        };
+        n1 = n1.max(mem_type.minimum().try_into().unwrap());
+        m1 = match m1 {
+            Some(m1) => match mem_type.maximum() {
+                Some(m2) => Some(m1.min(m2.try_into().unwrap())),
+                None => Some(m1),
+            },
+            None => mem_type.maximum().map(|m2| m2.try_into().unwrap()),
+        };
+    }
+
+    if let Some(m1) = m1 {
+        if n1 > m1 {
+            return None;
+        }
+    }
+
+    Some((n1, m1))
+}
+
 pub fn run(
     host_module_name: &str,
     shared_memory_name: &str,
-    shared_memory_min_size: u32,
-    shared_memory_max_size: u32,
     main_function_name: &str,
     main_argc_value: i32,
     main_argv_value: i32,
@@ -11,6 +58,18 @@ pub fn run(
 ) -> Result<Vec<i32>> {
     let engine = Engine::default();
     let linker = Linker::new(&engine);
+
+    let modules: Vec<Module> = wasm_module_binaries
+        .iter()
+        .map(|binary| Module::new(&engine, binary).expect(&format!("module is invalid")))
+        .collect();
+
+    let (shared_memory_min_size, Some(shared_memory_max_size)) =
+        infer_shared_mem_type(modules, host_module_name, shared_memory_name).unwrap()
+    else {
+        panic!("cannot handle unspecified maximum memory size");
+    };
+
     let shared_mem = SharedMemory::new(
         &engine,
         MemoryType::shared(shared_memory_min_size, shared_memory_max_size),
