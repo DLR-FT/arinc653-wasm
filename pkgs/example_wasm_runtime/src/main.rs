@@ -10,16 +10,12 @@ pub struct Cli {
     #[arg(long, default_value = "memory")]
     pub shared_memory_name: String,
     #[arg(long, default_value = "138")]
-    pub shared_memory_min_size: u32,
-    #[arg(long, default_value = "138")]
-    pub shared_memory_max_size: u32,
-    #[arg(long, default_value = "main")]
     pub main_function_name: String,
     #[arg(long, default_value = "0")]
     pub main_argc_value: i32,
     #[arg(long, default_value = "0")]
     pub main_argv_value: i32,
-
+    #[arg(required = true)]
     pub wasm_module_paths: Vec<String>,
 }
 
@@ -27,8 +23,6 @@ fn main() {
     let Cli {
         host_module_name,
         shared_memory_name,
-        shared_memory_min_size,
-        shared_memory_max_size,
         main_function_name,
         main_argc_value,
         main_argv_value,
@@ -42,8 +36,6 @@ fn main() {
     run(
         &host_module_name,
         &shared_memory_name,
-        shared_memory_min_size,
-        shared_memory_max_size,
         &main_function_name,
         main_argc_value,
         main_argv_value,
