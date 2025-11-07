@@ -1,7 +1,7 @@
 use wasmtime::*;
 
 fn infer_shared_mem_type(
-    modules: Vec<Module>,
+    modules: &Vec<Module>,
     host_module_name: &str,
     shared_memory_name: &str,
 ) -> Option<(u32, Option<u32>)> {
@@ -55,18 +55,18 @@ pub fn run(
     main_function_name: &str,
     main_argc_value: i32,
     main_argv_value: i32,
-    wasm_module_binaries: Vec<String>,
+    wasm_module_paths: &Vec<String>,
 ) -> Vec<i32> {
     let engine = Engine::default();
     let linker = Linker::new(&engine);
 
-    let modules: Vec<Module> = wasm_module_binaries
+    let modules: Vec<Module> = wasm_module_paths
         .iter()
-        .map(|binary| Module::new(&engine, binary).expect("module is invalid"))
+        .map(|path| Module::from_file(&engine, path).unwrap())
         .collect();
 
     let (shared_memory_min_size, Some(shared_memory_max_size)) =
-        infer_shared_mem_type(modules, host_module_name, shared_memory_name)
+        infer_shared_mem_type(&modules, host_module_name, shared_memory_name)
             .expect("the modules do not agree on a common shared memory type")
     else {
         panic!("wasmtime cannot handle unspecified maximum shared memory size");
@@ -78,8 +78,7 @@ pub fn run(
     )
     .expect("shared memory could not be instantiated");
 
-    let threads = wasm_module_binaries.iter().map(|binary| {
-        let module = Module::new(&engine, binary).expect("module is invalid");
+    let threads = modules.into_iter().map(|module| {
         let engine = engine.clone();
         let mut linker = linker.clone();
         let shared_mem = shared_mem.clone();

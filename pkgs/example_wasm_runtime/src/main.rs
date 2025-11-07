@@ -31,11 +31,6 @@ fn main() {
         main_argv_value,
         wasm_module_paths,
     } = Cli::parse();
-
-    let wasm_modules = wasm_module_paths
-        .iter()
-        .map(|path| std::fs::read_to_string(path).unwrap_or_else(|_| panic!("{path} could not be read")))
-        .collect();
     let results = run(
         &host_module_name,
         &shared_memory_name,
@@ -43,10 +38,10 @@ fn main() {
         &main_function_name,
         main_argc_value,
         main_argv_value,
-        wasm_modules,
+        &wasm_module_paths,
     );
 
-    for (result, wasm_module_paths) in results.iter().zip(wasm_module_paths) {
-        println!("{wasm_module_paths} returned: {result}")
+    for (result, wasm_module_path) in results.iter().zip(wasm_module_paths) {
+        println!("{wasm_module_path} returned: {result}")
     }
 }
