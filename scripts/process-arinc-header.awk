@@ -8,6 +8,12 @@ BEGIN {
   # ORS = "\n";
 
   BINMODE = 0;
+
+  print("#ifdef  __wasm__")
+  print("#define  WASM_IMPORT_MODULE(module, name)  __attribute__((import_module(module), import_name(name)))")
+  print("#else")
+  print("#define  WASM_IMPORT_MODULE(module, name)")
+  print("#endif")
 }
 
 # detect that we are in an implementation dependent section of the header
@@ -23,7 +29,7 @@ BEGIN {
 # mark all functions to be importend from the arinc module
 "extern" == $1 && "void" == $2 && $4 ~/^\(/ {
   import_module = "arinc653:p1@0.1.0";
-  print "__attribute__((import_module(\"" import_module "\"), import_name(\"" $3 "\")))"
+  print "WASM_IMPORT_MODULE(\"" import_module "\", \"" $3 "\")"
 }
 
 # make all function pointers actually be function pointers
