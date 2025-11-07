@@ -25,6 +25,7 @@ TARGET_DIR          = target
 
 INC_DIR             = include
 HEADER_EXT          = h
+PREPROC_DEF_EXT     = define
 SRC_DIR             = src
 SRC_EXT             = c
 WASM_EXT            = wasm
@@ -41,6 +42,7 @@ WASM_FILES_DEBUG    = $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/debug/%, $(SOURCES:
 WASM_FILES_RELEASE  = $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/release/%, $(SOURCES:.$(SRC_EXT)=.$(WASM_EXT)))
 WAT_FILES           = $(WASM_FILES_DEBUG:.$(WASM_EXT)=.$(WAT_EXT)) $(WASM_FILES_RELEASE:.$(WASM_EXT)=.$(WAT_EXT))
 ASM_FILES           = $(WASM_FILES_DEBUG:.$(WASM_EXT)=.$(ASM_EXT)) $(WASM_FILES_RELEASE:.$(WASM_EXT)=.$(ASM_EXT))
+ASM_FILES           = $(WASM_FILES_DEBUG:.$(WASM_EXT)=.$(PREPROC_DEF_EXT)) $(WASM_FILES_RELEASE:.$(WASM_EXT)=.$(PREPROC_DEF_EXT))
 
 SRC_LAYOUTS         = $(addsuffix .$(LAYOUT_EXT), $(patsubst $(SRC_DIR)/%, $(TARGET_DIR)/layouts/%, $(SOURCES)))
 HEADER_LAYOUTS      = $(addsuffix .$(LAYOUT_EXT), $(patsubst $(INC_DIR)/%, $(TARGET_DIR)/layouts/%, $(HEADERS)))
@@ -98,18 +100,24 @@ $(TARGET_DIR)/debug/%.$(WASM_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES
 
 # rule to compile C to WebAssembly-LLVM-Assembly in debug mode
 $(TARGET_DIR)/debug/%.$(ASM_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
-	@mkdir -p -- $(@D)/cdb-fragments
-	$(CC) $(C_FLAGS_DEBUG) -gen-cdb-fragment-path $(@D)/cdb-fragments -S -o$@ -- $<
+	$(CC) $(C_FLAGS_DEBUG) -S -o$@ -- $<
+
+# rule to run preprocessor on C files to generate define files in debug mode
+$(TARGET_DIR)/debug/%.$(PREPROC_DEF_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
+	$(CC) $(C_FLAGS_DEBUG) -E -dM -o$@ -- $<
 
 # rule to compile C to Wasm in release mode
 $(TARGET_DIR)/release/%.$(WASM_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
 	@mkdir -p -- $(@D)/cdb-fragments
 	$(CC) $(C_FLAGS_RELEASE) -gen-cdb-fragment-path $(@D)/cdb-fragments -o$@ -- $<
 
-# rule to compile C to WebAssembly-LLVM-Assembly in debug mode
+# rule to compile C to WebAssembly-LLVM-Assembly in release mode
 $(TARGET_DIR)/release/%.$(ASM_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
-	@mkdir -p -- $(@D)/cdb-fragments
-	$(CC) $(C_FLAGS_DEBUG) -gen-cdb-fragment-path $(@D)/cdb-fragments -S -o$@ -- $<
+	$(CC) $(C_FLAGS_RELEASE) -S -o$@ -- $<
+
+# rule to run preprocessor on C files to generate define files in release mode
+$(TARGET_DIR)/release/%.$(PREPROC_DEF_EXT) : $(SRC_DIR)/%.$(SRC_EXT) $(COMPILE_REQUISITES)
+	$(CC) $(C_FLAGS_RELEASE) -E -dM -o$@ -- $<
 
 # rule to concatenate a compile_commands.json
 compile_commands.json: $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE)
