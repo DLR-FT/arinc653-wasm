@@ -14,9 +14,26 @@
 - **Choice**: import the linear memory (via `--import-memory` linker flag)
   **Reason**: Each partition has multiple processes, which are guaranteed to have a shared address space (ARINC 653 P1-5 chapter 2.3.2). The only way to achieve this is if they have shared linear memory. To cause that, they all need to import the linear memory.
 - **Choice**: export the function table (via `--export-table` linker flag)
-  **Reason**: In order for the `CREATE_PROCESS` call to succeed, the host environment needs to be able to call a guest environment function identified via an index into said table. Exporting the table ensures that the funcref table is accessible from the host environment.
+  **Reason**: In order for the `CREATE_PROCESS` call to succeed, the host environment needs to be able to call a guest environment function identified via an index into said table. Exporting the table ensures that the funcref table is accessible from the host environment. And it alleviates the WASI-thread approach with patching a wasm with a `call_indirect`.
 - **Choice**: Do not use `__externref_t` for function pointers, e.g. the `ENTRY_POINT` argument in the `CREATE_ERROR_HANDLER` function.
   **Reason**: `__externref_t` is not representable in Linear Memory. Hence, it can not become the field of a struct. However, the `PROCESS_ATTRIBUTE_TYPE` struct comprises an `ENTRY_POINT` field holding a function pointer. As `__externref_t` can not be used there, it is necessary to expose the table for function pointers. Therefore, any use of `__externref_t` shall be avoided, in order to keep all function pointer representations consistent.
+- **Choice**: Use `__wasm__` preprocessor to annotate official apex header.
+  **Reason**: Clang is the sole compiler, that is capable to compile reasonable into wasm. Heaving two headers, one non-annotated and one annotated is quite unfavorable. Thus, we should propose sth. like:
+  ```
+  #ifdef __wasm__
+  #define WASM_IMPORT_MODULE(name) __attribute__((import_module(name)))
+  #else
+  #define WASM_IMPORT_MODULE(name)
+  #endif
+  ```
+  which becomes used like:
+  ```
+  WASM_IMPORT_MODULE("arinc653")
+  extern void GET_TIME (
+       /*out*/ SYSTEM_TIME_TYPE         *SYSTEM_TIME, /* 64bit - 1 nanosecond LSB */
+       /*out*/ RETURN_CODE_TYPE         *RETURN_CODE );
+  ```
+  **Hint** `import_name()  is not needed, as clang just employs the function name properly.
 
 # Legal Matter
 
