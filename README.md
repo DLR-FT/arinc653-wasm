@@ -6,7 +6,6 @@
 - [Example of WebAssembly inline assembly](https://github.com/WebAssembly/wasi-libc/blob/1590774d836c482e1c6e480b122214a01c822b50/libc-top-half/musl/src/env/__init_tls.c#L181-L183)
 - [Example of WebAssembly `.s` files](https://github.com/WebAssembly/wasi-libc/blob/1590774d836c482e1c6e480b122214a01c822b50/libc-top-half/musl/src/thread/wasm32/wasi_thread_start.s#L6)
 
-
 # Rationale
 
 - **Choice**: `<an APEX integer type>` -> `APEX_LONG_INTEGER`
