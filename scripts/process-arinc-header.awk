@@ -9,6 +9,9 @@ BEGIN {
 
   BINMODE = 0;
 
+  # make sure integer types with guaranteed bit width are available
+  print "#include <stdint.h>"
+
   print("#ifdef  __wasm__")
   print("#define  WASM_IMPORT_MODULE(module, name)  __attribute__((import_module(module), import_name(name)))")
   print("#else")
@@ -37,7 +40,6 @@ $0 ~/SYSTEM_ADDRESS_TYPE\s+ENTRY_POINT/ {
   gsub(/SYSTEM_ADDRESS_TYPE\s+ENTRY_POINT/,"void (*ENTRY_POINT)(void)", $0);
 }
 
-
 # make all implementation dependent defines ifndef based
 "#define" == $1 && $2 ~ /^SYSTEM_LIMIT_/ && 1 == is_impl_dependent {
   define_ident = $2;
@@ -58,6 +60,13 @@ $0 ~/SYSTEM_ADDRESS_TYPE\s+ENTRY_POINT/ {
   next;
 }
 
+# make sure all base APEX types are correctly sized
+"typedef" == $1 && $0 ~ /\sAPEX_\w+;\s/ {
+  gsub(/\s+unsigned char\s+/, "  uint8_t   ");
+  gsub(/\s+unsigned long\s+/, "  uint32_t  ");
+  gsub(/\s+long long\s+/, "  int64_t   ");
+  gsub(/\s+long\s+/, "  int32_t   ");
+}
 
 # always pick `APEX_LONG_INTEGER` (which ist `int64_t`) where there is a choice
 {
