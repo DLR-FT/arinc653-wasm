@@ -27,7 +27,7 @@ fn spinlock_stress_test() {
         (i32.load (i32.const 8))
   )
 
-
+  (func $proc_alloc (export "proc_alloc") (result i32) i32.const 1)
   (func $main (export "main") (param i32) (param i32) (result i32)
     (local $val i32)
     (local $i i32)
@@ -47,13 +47,11 @@ fn spinlock_stress_test() {
     let results = run(
         "host",
         "shared_mem",
-        1,
-        2,
+        "proc_alloc",
         "main",
         0,
         0,
         vec![count_up_to_500.to_owned(); 10000],
-    )
-    .unwrap();
+    );
     assert_eq!(*results.iter().max().unwrap(), 500 * 10000);
 }
