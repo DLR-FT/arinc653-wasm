@@ -9,7 +9,9 @@ pub struct Cli {
     pub host_module_name: String,
     #[arg(long, default_value = "memory")]
     pub shared_memory_name: String,
-    #[arg(long, default_value = "138")]
+    #[arg(long, default_value = "__apex_wasm_proc_alloc")]
+    pub proc_alloc_name: String,
+    #[arg(long, default_value = "main")]
     pub main_function_name: String,
     #[arg(long, default_value = "0")]
     pub main_argc_value: i32,
@@ -23,6 +25,7 @@ fn main() {
     let Cli {
         host_module_name,
         shared_memory_name,
+        proc_alloc_name,
         main_function_name,
         main_argc_value,
         main_argv_value,
@@ -31,15 +34,19 @@ fn main() {
 
     let wasm_modules = wasm_module_paths
         .iter()
-        .map(|path| std::fs::read_to_string(path).expect(&format!("{path} could not be read")))
+        .map(|path| std::fs::read_to_string(path).unwrap_or_else(|_| panic!("{path} could not be read")))
         .collect();
-    run(
+    let results = run(
         &host_module_name,
         &shared_memory_name,
+        &proc_alloc_name,
         &main_function_name,
         main_argc_value,
         main_argv_value,
         wasm_modules,
-    )
-    .unwrap();
+    );
+
+    for (result, wasm_module_paths) in results.iter().zip(wasm_module_paths) {
+        println!("{wasm_module_paths} returned: {result}")
+    }
 }
