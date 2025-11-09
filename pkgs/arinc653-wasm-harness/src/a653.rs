@@ -5,7 +5,7 @@ use std::{
 };
 
 use a653rs::{
-    bindings::PortDirection,
+    bindings::{ErrorReturnCode, PortDirection},
     prelude::{ErrorCode, OperatingMode, Validity},
 };
 use anyhow::Context;
@@ -345,10 +345,24 @@ pub fn host_periodic_wait(
     let name = caller.name();
     trace!("[{name}] PERIODIC_WAIT({ret_ptr:#x})");
     let mem = caller.extract_shmem()?;
-    debug!("[{name}] PERIODIC_WAIT is a noop");
 
-    // TODO return correct return value
-    mem.write_i32(ret_ptr, RETURN_CODE_NO_ERROR)?;
+    let provider = caller.data();
+    let tid = std::thread::current().id();
+
+    let pid_table = provider.processes.read().unwrap();
+
+    let Some(process) = pid_table.get_from_tid(&tid) else {
+        return mem.write_i32(ret_ptr, ErrorReturnCode::InvalidParam as i32);
+    };
+
+    let return_code = if let Ok(positive_period) = u64::try_from(process.period()) {
+        std::thread::sleep(std::time::Duration::from_nanos(positive_period));
+        RETURN_CODE_NO_ERROR
+    } else {
+        ErrorReturnCode::InvalidMode as i32
+    };
+
+    mem.write_i32(ret_ptr, return_code)?;
     Ok(())
 }
 
