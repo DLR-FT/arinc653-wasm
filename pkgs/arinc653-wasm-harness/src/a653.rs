@@ -16,6 +16,7 @@ use wasmtime::{
 };
 
 use crate::{
+    a653_consts::RETURN_CODE_NO_ERROR,
     channel::{SamplingMessage, SamplingPort, SamplingPortTable},
     config::Config,
     process::{ProcAttrBuffer, Process, ProcessAttribute, ProcessTable},
@@ -169,6 +170,7 @@ pub trait ShmemExt {
     fn write_byte_slice(&self, ptr: i32, val: &[u8]) -> Result<()>;
     fn write_i64(&self, ptr: i32, val: i64) -> Result<()>;
     fn write_i32(&self, ptr: i32, val: i32) -> Result<()>;
+    #[allow(dead_code)]
     fn write_u8(&self, ptr: i32, val: u8) -> Result<()>;
 }
 
@@ -260,7 +262,7 @@ pub fn host_create_process(
 
     mem.write_i64(pid_ptr, pid)?;
     // TODO return correct return value
-    mem.write_u8(ret_ptr, 0)?;
+    mem.write_i32(ret_ptr, RETURN_CODE_NO_ERROR)?;
 
     Ok(())
 }
@@ -279,7 +281,7 @@ pub fn host_report_application_message(
     provider.report_application_message(&msg)?;
 
     // TODO return correct return value
-    mem.write_u8(ret_ptr, 0)?;
+    mem.write_i32(ret_ptr, RETURN_CODE_NO_ERROR)?;
     Ok(())
 }
 
@@ -299,7 +301,7 @@ pub fn host_raise_application_error(
     provider.raise_application_error(error.unwrap(), &msg)?;
 
     // TODO return correct return value
-    mem.write_u8(ret_ptr, 0)?;
+    mem.write_i32(ret_ptr, RETURN_CODE_NO_ERROR)?;
     Ok(())
 }
 
@@ -315,7 +317,7 @@ pub fn host_start(
     provider.start(process_id)?;
 
     // TODO return correct return value
-    mem.write_u8(ret_ptr, 0)?;
+    mem.write_i32(ret_ptr, RETURN_CODE_NO_ERROR)?;
     Ok(())
 }
 
@@ -332,7 +334,7 @@ pub fn host_set_partition_mode(
     provider.set_partition_mode(mode.unwrap())?;
 
     // TODO return correct return value
-    mem.write_u8(ret_ptr, 0)?;
+    mem.write_i32(ret_ptr, RETURN_CODE_NO_ERROR)?;
     Ok(())
 }
 
@@ -346,7 +348,7 @@ pub fn host_periodic_wait(
     debug!("[{name}] PERIODIC_WAIT is a noop");
 
     // TODO return correct return value
-    mem.write_u8(ret_ptr, 0)?;
+    mem.write_i32(ret_ptr, RETURN_CODE_NO_ERROR)?;
     Ok(())
 }
 
@@ -374,7 +376,7 @@ pub fn host_create_sampling_port(
 
     mem.write_i64(sid_ptr, sid)?;
     // TODO return correct return value
-    mem.write_u8(ret_ptr, 0)?;
+    mem.write_i32(ret_ptr, RETURN_CODE_NO_ERROR)?;
 
     Ok(())
 }
@@ -396,7 +398,7 @@ pub fn host_write_sampling_message(
     provider.write_sampling_message(sid, &bytes)?;
 
     // TODO return correct return value
-    mem.write_u8(ret_ptr, 0)?;
+    mem.write_i32(ret_ptr, RETURN_CODE_NO_ERROR)?;
 
     Ok(())
 }
@@ -423,7 +425,7 @@ pub fn host_read_sampling_message(
     mem.write_i32(len_ptr, msg.msg().len() as i32)?;
 
     // TODO return correct return value
-    mem.write_u8(ret_ptr, 0)?;
+    mem.write_i32(ret_ptr, RETURN_CODE_NO_ERROR)?;
 
     Ok(())
 }
