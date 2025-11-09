@@ -25,6 +25,24 @@
 - **Choice**: Use `RETURN_CODE_TYPE` -> `i32`
   **Reason**: [Chapter 6.7.2.2 of ISO/IEC 9899:2018 ("C17")](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2310.pdf#subsubsection.6.7.2.2) states that the representation of enum types is implementation dependent. However, there is not much of a choice here, since the [Wasm C ABI](https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md) dictates `enum`s to be represented as `i32`. [Chapter 6.7.3.3 of ISO/IEC 9899:2024 ("C24")](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#subsubsection.6.7.3.3) introduces the possibility of specifying the underlying type for `enum`s, which we intentionally ignore to maintain compatibility with older versions of the C standard.
 
+# ARINC 653 Wasm Harness
+
+This repository contains a very simplistic ARINC 653 harness. It currently only provides the bare minimum to verify that processes can start, and that some selected ARINC 653 APEX services are provided.
+It is by no means even close to complete or ARINC 653 compliant, it solely serves to have _some_ environment to run the Wasm partitions in.
+
+```bash
+# Compile the Wasm partitions
+make target/release/example_create_process_advanced.wasm
+
+# Start socat. Sampling ports map to UDP sockets, this allows to receive data from Wasm partitions.
+socat -u -v UDP-LISTEN:2301,fork,reuseport /dev/null
+
+# Run the harness.
+nix run .\#arinc653-wasm-harness -- \
+  --sampling-port udp://test@127.0.0.1:2301 \
+  target/release/example_create_process_advanced.wasm
+```
+
 # Legal Matter
 
 Copyright © 2025-2026 Deutsches Zentrum für Luft- und Raumfahrt e.V. (DLR).

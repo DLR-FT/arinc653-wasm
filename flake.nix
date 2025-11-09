@@ -101,6 +101,7 @@
                   clippy,
                   rustfmt,
                   rust-analyzer,
+                  socat,
                 }:
                 mkShell {
                   inputsFrom = [ c-abi-lens ];
@@ -110,6 +111,7 @@
                     clippy # lint Rust code
                     rustfmt # format Rust code
                     rust-analyzer
+                    socat # for tinkering with the arinc653-wasm-harness
                   ];
                 }
               ) { };
