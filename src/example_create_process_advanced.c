@@ -1,4 +1,5 @@
 #include "ARINC653-wasm.h"
+#include <string.h>
 
 SAMPLING_PORT_ID_TYPE sid;
 
@@ -18,6 +19,7 @@ void pp_main(void) {
 
     // write message to buffer
     APEX_INTEGER msg_len = sizeof(msg_buf);
+    msg_len = strnlen((const char *)&msg_buf, msg_len);
 
     // (error) return code
     RETURN_CODE_TYPE err;
