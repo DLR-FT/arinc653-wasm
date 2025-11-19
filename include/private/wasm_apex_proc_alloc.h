@@ -75,10 +75,6 @@
  * even on inline assembly.
  */
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
 // define the maxium number of processes
 #ifndef SYSTEM_LIMIT_NUMBER_OF_PROCESSES
 #define SYSTEM_LIMIT_NUMBER_OF_PROCESSES 128
@@ -112,13 +108,13 @@ __asm__(".globaltype __tls_base, i32\n");
 // struct holding the per-thread/per-process global state
 struct __apex_wasm_proc {
   // thread local storage
-  uint8_t tls[APEX_WASM_TLS_SIZE];
+  unsigned char tls[APEX_WASM_TLS_SIZE];
 
   // linear stack
   //
   // Put after TLS, so that a stack-overflow first invalidates that thread's
   // own TLS
-  uint8_t ls[APEX_WASM_LS_SIZE];
+  unsigned char ls[APEX_WASM_LS_SIZE];
 };
 
 // array of per-thread global state holding structs
@@ -225,18 +221,18 @@ __apex_wasm_proc_alloc(void) {
       [proc_slots_len] "i"(SYSTEM_LIMIT_NUMBER_OF_PROCESSES),
       [proc_size] "i"(sizeof(struct __apex_wasm_proc)),
       [proc_ls_size] "i"(sizeof(((struct __apex_wasm_proc *)0)->ls)),
-      [proc_ls_offset] "i"(offsetof(struct __apex_wasm_proc, ls)),
+      [proc_ls_offset] "i"(__builtin_offsetof(struct __apex_wasm_proc, ls)),
       [proc_tls_size] "i"(sizeof(((struct __apex_wasm_proc *)0)->tls)),
-      [proc_tls_offset] "i"(offsetof(struct __apex_wasm_proc, tls)),
+      [proc_tls_offset] "i"(__builtin_offsetof(struct __apex_wasm_proc, tls)),
       [base_address_usage_markers] "i"(&__apex_wasm_proc_usage_markers),
-      [base_address_slots] "i"(&__apex_wasm_proc_slots), [true_inst] "i"(true),
+      [base_address_slots] "i"(&__apex_wasm_proc_slots), [true_inst] "i"(1),
       [alingment_mask] "i"(~(15)),
-      [false_inst] "i"(false)
+      [false_inst] "i"(0)
       : "memory" // better safe than sorry,
   );
 
   // per default, we assume failure
-  return false;
+  return 0;
 }
 
 // free this linear stack
@@ -281,11 +277,11 @@ __apex_wasm_proc_free(void) {
       :: // input registers and immediates
 
       [invalid_tls_addr] "i"(
-          UINT32_MAX -
+          0xffffffff -
           sizeof(((struct __apex_wasm_proc *)0)
                      ->tls)), // a hopefully invalid memory address for TLS
       [marker_base_addr] "p"(&__apex_wasm_proc_usage_markers),
-      [false_inst] "i"(false));
+      [false_inst] "i"(0));
 }
 
 #endif
