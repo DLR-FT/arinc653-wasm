@@ -15,20 +15,20 @@
  * Two things are needed for them to work:
  *
  *
- * ## Secondary stack
+ * ## Linear stack
  *
  * WebAssembly's (value-) stack can not be pointed to. However, many languages,
  * such as C, rely on being able to get the address of stack allocated
- * variables. To solve this pickle, LLVM creates a secondary stack within the
+ * variables. To solve this pickle, LLVM creates a linear stack within the
  * linear memory, together with a stack pointer global (`__stack_pointer`)
  * holding an address to that area in the linear memory. Variables to which
- * pointers will be needed are allocated on the secondary stack within the
- * linear memory.
+ * pointers will be needed are allocated on the linear stack within the linear
+ * memory.
  *
  * In a multi-threading scenario, all threads share the same address space.
  * However, they need separate stacks, as they most likely diverge in data and
  * control flow. For this purpose, each thread must use a different area in the
- * linear memory for the secondary stack.
+ * linear memory for the linear stack.
  *
  *
  * ## Thread local storage base
@@ -41,12 +41,12 @@
  * # Implementation
  *
  * The correctness of this implementation depends on the code handling
- * allocation and deallocation of secondary stack and TLS to themselves not
- * relying on secondary stack/TLS to be set-up.
+ * allocation and deallocation of linear stack and TLS to themselves not
+ * relying on linear stack/TLS to be set-up.
  *
  * The overall principle is simple:
  *
- * - `__apex_wasm_proc` structure: contains two byte arrays for secondary stack
+ * - `__apex_wasm_proc` structure: contains two byte arrays for linear stack
  *   and TLS.
  * - `__apex_wasm_proc_slots` array: contains precisely enough instances of
  *   `__apex_wasm_proc` to accomodate for `SYSTEM_LIMIT_NUMBER_OF_PROCESSES`
@@ -54,14 +54,14 @@
  * - `__apex_wasm_proc_usage_markers` array: contains booleans tracking whether
  *   a slot within `__apex_wasm_proc_slots` is used (true) or unused (false). It
  *   is of the same length as `__apex_wasm_proc_slots`.
- * - `__apex_wasm_proc_alloc` function: allocates secondary stack and TLS from
+ * - `__apex_wasm_proc_alloc` function: allocates linear stack and TLS from
  *   `__apex_wasm_proc_slots` and sets up the corresponding global variables
  *   (`__stack_pointer` & `__tls_base`). Returns true on success, false on
  *   failure (when all thread slots are already used). Is itself thread-safe.
- * - `__apex_wasm_proc_free`: frees this thread's secondary stack and TLS. Set's
+ * - `__apex_wasm_proc_free`: frees this thread's linear stack and TLS. Set's
  *   both `__stack_pointer` & `__tls_base` to astronomically high values to make
  *   it likely that an accidential use of them in a thread whose per-thread data
- *   was already freed traps by the first access to secondary stack or TLS.
+ *   was already freed traps by the first access to linear stack or TLS.
  *
  *
  * # Generating the assembly
@@ -80,9 +80,9 @@
 #define SYSTEM_LIMIT_NUMBER_OF_PROCESSES 128
 #endif
 
-// define the secondary stack size to default to 64KiB (0x10000)
-#ifndef APEX_WASM_SS_SIZE
-#define APEX_WASM_SS_SIZE 0x10000
+// define the linear stack size to default to 64KiB (0x10000)
+#ifndef APEX_WASM_LS_SIZE
+#define APEX_WASM_LS_SIZE 0x10000
 #endif
 
 // define the thread local storage (TLS) default size to 4KiB (0x1000)
@@ -105,10 +105,11 @@ struct __apex_wasm_proc {
   // thread local storage
   uint8_t tls[APEX_WASM_TLS_SIZE];
 
-  // secondary stack
-  // put after TLS, so that a stack-overflow first invalidates that thread's own
-  // TLS
-  uint8_t ss[APEX_WASM_SS_SIZE];
+  // linear stack
+  // 
+  // Put after TLS, so that a stack-overflow first invalidates that thread's
+  // own TLS
+  uint8_t ls[APEX_WASM_LS_SIZE];
 };
 
 // array of per-thread global state holding structs
@@ -118,8 +119,8 @@ struct __apex_wasm_proc
 // True if this slot is currently used
 _Atomic _Bool __apex_wasm_proc_usage_markers[SYSTEM_LIMIT_NUMBER_OF_PROCESSES];
 
-// from the `__apex_wasm_proc_slots` allocate the first unused one to host
-// this thread's secondary stack and thread local storage
+// from the `__apex_wasm_proc_slots` allocate the first unused one to host this
+// thread's linear stack and thread local storage
 __attribute__((export_name("__apex_wasm_proc_alloc"))) _Bool
 __apex_wasm_proc_alloc(void) {
   int32_t loop_counter = 0;
@@ -163,11 +164,11 @@ __apex_wasm_proc_alloc(void) {
   return false;
 }
 
-// free this stack
+// free this linear stack
 __attribute__((export_name("__apex_wasm_proc_free"))) void
 __apex_wasm_proc_free(void) {
   __asm__(
-      // invalidate stack pointer
+      // invalidate linear stack pointer
       "i32.const %[invalid_addr]\n"
       "global.set __stack_pointer\n"
 
