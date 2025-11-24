@@ -34,6 +34,11 @@ ASM_EXT             = S
 LAYOUT_EXT          = layout.txt
 
 
+ARINC_DOWNLOADS     = arinc653.h arinc653p1--ada83 arinc653p1--ada95
+ARINC_DOWNLOADS    += arinc653p2.h arinc653p2-ada83 arinc653p2-ada95
+ARINC_DOWNLOADS    += arinc653typesp1s5 arinc653p2s4
+
+
 HEADERS             = $(shell find $(INC_DIR) -type f -name *.$(HEADER_EXT))
 GENERATED_HEADERS   = $(INC_DIR)/ARINC653-wasm.h
 SOURCES             = $(shell find $(SRC_DIR) -type f -name *.$(SRC_EXT))
@@ -51,7 +56,7 @@ ALL_TARGET_FILES    = $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE) $(WAT_FILES) $(A
 
 COMPILE_REQUISITES  = $(GENERATED_HEADERS)
 
-.PHONY: all clean clean-all format layouts setup
+.PHONY: all clean clean-all download-all format layouts setup
 
 
 all: $(ALL_TARGET_FILES)
@@ -61,6 +66,8 @@ clean:
 
 clean-all: clean
 	@rm -rf -- $(TARGET_DIR) compile_commands.json
+
+download-all: $(patsubst %,$(TARGET_DIR)/downloads/%.zip,$(ARINC_DOWNLOADS))
 
 format:
 	clang-format -i -- $(SOURCES)
@@ -76,12 +83,12 @@ setup: $(GENERATED_HEADERS)
 ### Rules magic
 #
 
-# rule to download the ARINC headerfiles
-$(TARGET_DIR)/downloads/arinc653.h.zip $(TARGET_DIR)/downloads/arinc653p2.h.zip &:
+# rule to download the ARINC files
+$(TARGET_DIR)/downloads/%.zip:
 	@mkdir -p -- $(@D)
 	curl --user-agent 'Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0' \
 		--location --output-dir $(TARGET_DIR)/downloads/ --remote-name-all \
-		https://brx-content.fullsight.org/site/binaries/content/assets/itc/content/support-files/arinc653{,p2}.h.zip
+		https://brx-content.fullsight.org/site/binaries/content/assets/itc/content/support-files/$(@F)
 	
 # rule to extract the ARINC headerfiles
 $(TARGET_DIR)/unprocessed-headers/ARINC653.h $(TARGET_DIR)/unprocessed-headers/ARINC653P2.h &: $(TARGET_DIR)/downloads/arinc653.h.zip $(TARGET_DIR)/downloads/arinc653p2.h.zip

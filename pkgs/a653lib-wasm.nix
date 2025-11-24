@@ -47,8 +47,8 @@ let
       pkgsBuildBuild,
       c-abi-lens,
       libarchive,
-      wasmtime,
       wamr,
+      wasmtime,
       buildWasmStuff ? stdenv.hostPlatform.isWasm || stdenv.hostPlatform.isWasi,
     }:
     stdenv.mkDerivation {
