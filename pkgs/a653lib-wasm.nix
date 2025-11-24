@@ -60,17 +60,34 @@ let
         hash = "sha256-CFL36Bg0Ri4KC1F3wEP52yy2j/KcwwsltPU7dtg3Ujo=";
       };
 
-      # WAMR offers both libiwasm.so and libvmlib.a, the latter offers the static symbols needed for the native code
+
+      # WAMR offers both libiwasm.so and libvmlib.a, the latter offers the static symbols needed
+      #   for the native code
       postPatch = ''
         substituteInPlace a653_lib_wasm32/Makefile \
-          --replace '/usr/lib/libiwasm.a' "-lvmlib"
+          --replace-fail '/usr/lib/libiwasm.a' "-lvmlib"
       ''
-      # Makefile hardcodes to clang, but for the nixpkgs clang is wrapped so that the sysroot is discovered
-      # Setting the target explicitly is not needed, and the nixpkgs call the target wasm32-unknown-wasi, not wasm32-wasi
-      + lib.strings.optionalString buildWasmStuff ''
+      # - Makefile hardcodes to gcc as native compiler, but for cross compilation it comes with the
+      #   target prefix
+      # - Makefile hardcodes to ar as native archiver, but for cross compilation it comes with the
+      #   target prefix
+      + lib.strings.optionalString (!buildWasmStuff) ''
         substituteInPlace Makefile \
-          --replace 'clang' "${stdenv.cc.targetPrefix}cc" \
-          --replace '--target=wasm32-wasi' ""
+          --replace-fail 'CC_PATH=' 'CC_PATH=${stdenv.cc.targetPrefix}'
+        substituteInPlace a653_lib/Makefile \
+          --replace-fail 'CC = gcc' 'CC = ${stdenv.cc.targetPrefix}gcc' \
+          --replace-fail 'AR = ar' 'AR = ${stdenv.cc.targetPrefix}ar'
+      ''
+      # - Makefile hardcodes to clang as Wasm compiler, but for the nixpkgs clang is wrapped so that
+      #   the sysroot is discovered
+      # - Setting the target explicitly is not needed, and the nixpkgs call the target
+      #   wasm32-unknown-wasi, not wasm32-wasi
+      + lib.strings.optionalString buildWasmStuff ''
+        set -x
+        substituteInPlace {.,a653_lib{,_wasm32}}/Makefile \
+          --replace-quiet 'clang' "${stdenv.cc.targetPrefix}cc" \
+          --replace-quiet '--target=wasm32-wasi' ""
+        set +x
       '';
 
       nativeBuildInputs = [
@@ -117,7 +134,7 @@ let
         cp --recursive --no-target-directory -- bin "$out/wamr"
 
         for FILE in "$out/wamr/p_wamr" "$out/wasmtime/p_wasmtime"
-        do     
+        do
           if [ -f "$FILE" ]
           then
             ln --relative --symbolic -- "$FILE" "''${FILE%/*}/wasm32_rt"

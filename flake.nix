@@ -52,6 +52,9 @@
           {
             # packages from `pkgs/`, injected into the `pkgs` via our `overlay.nix`
             packages = pkgs.arinc653WasmPkgs // {
+              a653lib-wasm-cross-aarch64 =
+                pkgs.pkgsCross.aarch64-multiplatform.callPackage pkgs/a653lib-wasm.nix
+                  { };
               wasm-partitions = pkgsWasm.callPackage pkgs/wasm-partitions.nix { };
             };
 
