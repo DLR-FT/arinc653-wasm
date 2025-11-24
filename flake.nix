@@ -88,9 +88,9 @@
                   inputsFrom = [ c-abi-lens ];
                   env = { inherit (cargo-llvm-cov) LLVM_COV LLVM_PROFDATA; };
                   nativeBuildInputs = [
-                    cargo-llvm-cov
-                    clippy
-                    rustfmt
+                    cargo-llvm-cov # cover Rust code
+                    clippy # lint Rust code
+                    rustfmt # format Rust code
                   ];
                 }
               ) { };
