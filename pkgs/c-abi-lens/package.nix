@@ -1,6 +1,5 @@
 {
   lib,
-  fetchFromGitHub,
   rustPlatform,
 }:
 
@@ -20,7 +19,7 @@ let
         "toml"
       ];
       # Files to explicitly include
-      include = [ ];
+      include = [ "README.md" ];
       # Files to explicitly exclude
       exclude = [ ];
 

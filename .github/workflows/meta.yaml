@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: 2024-2025 wucke13
+#
+# SPDX-License-Identifier: Apache-2.0
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-workflow-packages:
+    name: Check workflow derivation coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: dlr-ft
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: actions/checkout@v6
+        with:
+          # checkout full tree
+          fetch-depth: 0
+      - name: Checking each commit to have its derivations covered by CI
+        run: >
+          nix shell .#check-commits .#update-ci --command
+          check-commits update-ci.py --check
+  check-fmt:
+    name: Check formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: dlr-ft
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: actions/checkout@v6
+        with:
+          # checkout full tree
+          fetch-depth: 0
+      - name: Checking each commit to be properly formatted
+        run: >
+          nix shell .#check-commits --command
+          check-commits nix fmt -- --ci
