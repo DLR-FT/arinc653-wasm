@@ -74,20 +74,23 @@
  * It is worth to play with the optimization level, as LLVM happily optimizes
  * even on inline assembly.
  */
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 // define the maxium number of processes
-#ifndef SYSTEM_LIMIT_NUMBER_OF_PROCESSES
-#define SYSTEM_LIMIT_NUMBER_OF_PROCESSES 128
+#ifndef MAX_PROCS
+#define MAX_PROCS 128
 #endif
 
 // define the linear stack size to default to 64KiB (0x10000)
-#ifndef APEX_WASM_LS_SIZE
-#define APEX_WASM_LS_SIZE 0x10000
+#ifndef SS_SIZE
+#define SS_SIZE 0x10000
 #endif
 
 // define the thread local storage (TLS) default size to 4KiB (0x1000)
-#ifndef APEX_WASM_TLS_SIZE
-#define APEX_WASM_TLS_SIZE 0x1000
+#ifndef TLS_SIZE
+#define TLS_SIZE 0x1000
 #endif
 
 // declare the __apex_asm_proc_ptr global
@@ -104,135 +107,46 @@ __asm__(".globaltype __stack_pointer, i32\n");
 
 // (re-)declare the __tls_base global (if its not declared alredy)
 __asm__(".globaltype __tls_base, i32\n");
-
 // struct holding the per-thread/per-process global state
-struct __apex_wasm_proc {
-  // thread local storage
-  unsigned char tls[APEX_WASM_TLS_SIZE];
+struct __apex_wasm_proc { uint8_t tls[TLS_SIZE]; uint8_t ss[SS_SIZE]; };
+struct __apex_wasm_proc __proc_slots[MAX_PROCS];
+_Atomic _Bool __proc_used[MAX_PROCS];
+__attribute__((export_name("__apex_wasm_set_regs"))) _Bool
+__apex_wasm_set_regs(uintptr_t i) {
+  _Bool false_inst = false;
+  if (atomic_compare_exchange_strong(&__proc_used[i], &false_inst, true)) {
+    volatile void *new_sp = &(__proc_slots[i].ss[SS_SIZE - 8]);
+    volatile void *new_tls_base = &(__proc_slots[i].tls);
+    __asm__("local.get %0\n" "global.set __stack_pointer\n" ::"r"(new_sp));
+    __asm__("local.get %0\n" "global.set __tls_base\n" ::"r"(new_tls_base));
+    return true; }
+    return false; }
 
-  // linear stack
-  //
-  // Put after TLS, so that a stack-overflow first invalidates that thread's
-  // own TLS
-  unsigned char ls[APEX_WASM_LS_SIZE];
-};
-
-// array of per-thread global state holding structs
-struct __apex_wasm_proc
-    __apex_wasm_proc_slots[SYSTEM_LIMIT_NUMBER_OF_PROCESSES];
-
-// True if this slot is currently used
-_Atomic _Bool __apex_wasm_proc_usage_markers[SYSTEM_LIMIT_NUMBER_OF_PROCESSES];
-
-// from the `__apex_wasm_proc_slots` allocate the first unused one to host this
-// thread's linear stack and thread local storage
+// from the `__apex_wasm_proc_slots` allocate the first unused one to host
+// this thread's secondary stack and thread local storage
 __attribute__((export_name("__apex_wasm_proc_alloc"))) _Bool
 __apex_wasm_proc_alloc(void) {
-  __asm__(
-      // abort if proc_ptr is not zero, an already intialized thread tried to
-      // re-allocate. Thats a hard error.
-      "global.get __apex_wasm_proc_ptr\n"
-      "if\n"
-      "unreachable\n"
-      "end_if\n"
+  for (uintptr_t i = 0; i < MAX_PROCS; i++) {
 
-      "loop\n"
+    // define false as stack var, we need to pass them via pointer
 
-      // check if the current i-th slot is used
-      // cmpxchg returns false if slot was vacant and is now allocated to us
-      // cmpxchg returns true if slot was already used
-      "local.get %[loop_counter]\n" // index
-      "i32.const %[false_inst]\n"   // expected
-      "i32.const %[true_inst]\n"    // desired
-      "i32.atomic.rmw8.cmpxchg_u %[base_address_usage_markers]\n"
+    // BUG we take the address of this local variable, thus implicating that
+    // there already is a secondary stack, but the secondary stack was not yet
+    // set up!
 
-      "if\n" // slot was already used
+    // find an unused slot
+    if (__apex_wasm_set_regs(i))
+    // slot was unused
+    {
+      return true;
+    }
+    // slot is already used, check next one
+    else
+      continue;
+  }
 
-      // increment i by 1
-      "i32.const 1\n"
-      "local.get %[loop_counter]\n"
-      "i32.add\n"
-      "local.tee %[loop_counter]\n" // also keeps a copy of i on the stack for
-                                    // the next step
-
-      "i32.const %[proc_slots_len]\n" // i must always be smaller than this
-      "i32.lt_u\n"                    // if i < proc_slots_len
-      "br_if 1\n"                     // jumps to loop head
-
-      "else\n" // slot was unused and is now allocated to us
-
-      // get address to the slot's proc struct
-      "i32.const %[base_address_slots]\n" // base pointer to slots array
-      "i32.const %[proc_size]\n"    // size of one proc struct/element in array
-      "local.get %[loop_counter]\n" // index i into slots array
-      "i32.mul\n"                   // multiply element size by index
-      "i32.add\n"                   // add byte offset to base pointer
-      "local.set %[maybe_our_slot_base_addr]\n" // store allocated proc struct
-                                                // address
-
-      // set secondary stack pointer
-      //
-      // as the stack grows downwards, this must be set to the end of the ss
-      // member However, it needs to be 16 byte aligned, so we can not just
-      // blindly use the last byte of ss:
-      //
-      // https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md#the-linear-stack
-      "local.get %[maybe_our_slot_base_addr]\n" // proc struct address
-      "i32.const %[proc_ls_offset]\n" // offset of ss member in proc struct
-      "i32.const %[proc_ls_size]\n"   // size of ss member in proc struct
-      "i32.add\n" // add proc struct base address, ss member offset and ss
-      "i32.add\n" // member size to get the address of the first byte beyond the
-                  // ss member
-      "i32.const 1\n"
-      "i32.sub\n" // subtract one from proc_ls_size
-      "i32.const %[alingment_mask]\n"
-      "i32.and\n" // zeroize the last n bits to get 4 bits to get 16 byte
-                  // alignment
-      "global.set __stack_pointer\n"
-
-      // set tls base pointer
-      "local.get %[maybe_our_slot_base_addr]\n"
-      "i32.const %[proc_tls_offset]\n"
-      "i32.add\n"
-      "global.set __tls_base\n"
-
-      // store this processes slot index
-      "local.get %[loop_counter]\n"
-      "i32.const 1\n"
-      "i32.add\n"
-      "global.set __apex_wasm_proc_ptr\n"
-
-      // return true
-      "i32.const %[true_inst]\n"
-      "return\n"
-
-      "end_if\n"
-
-      "end_loop\n" // end loop
-
-      // return false
-      "i32.const %[false_inst]\n"
-      "return\n"
-
-      ::                     // input registers and immediates
-      [loop_counter] "r"(0), // local holding the loop counter
-      [maybe_our_slot_base_addr] "r"(
-          0), // address to slot allocated for this process, if any
-      [proc_slots_len] "i"(SYSTEM_LIMIT_NUMBER_OF_PROCESSES),
-      [proc_size] "i"(sizeof(struct __apex_wasm_proc)),
-      [proc_ls_size] "i"(sizeof(((struct __apex_wasm_proc *)0)->ls)),
-      [proc_ls_offset] "i"(__builtin_offsetof(struct __apex_wasm_proc, ls)),
-      [proc_tls_size] "i"(sizeof(((struct __apex_wasm_proc *)0)->tls)),
-      [proc_tls_offset] "i"(__builtin_offsetof(struct __apex_wasm_proc, tls)),
-      [base_address_usage_markers] "i"(&__apex_wasm_proc_usage_markers),
-      [base_address_slots] "i"(&__apex_wasm_proc_slots), [true_inst] "i"(1),
-      [alingment_mask] "i"(~(15)),
-      [false_inst] "i"(0)
-      : "memory" // better safe than sorry,
-  );
-
-  // per default, we assume failure
-  return 0;
+  // no free slot was found!
+  return false;
 }
 
 // free this linear stack
@@ -280,7 +194,7 @@ __apex_wasm_proc_free(void) {
           0xffffffff -
           sizeof(((struct __apex_wasm_proc *)0)
                      ->tls)), // a hopefully invalid memory address for TLS
-      [marker_base_addr] "p"(&__apex_wasm_proc_usage_markers),
+      [marker_base_addr] "p"(&__proc_used),
       [false_inst] "i"(0));
 }
 
