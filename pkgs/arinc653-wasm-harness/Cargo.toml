@@ -1,0 +1,9 @@
+[package]
+name = "arinc653-wasm-harness"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+wasmtime = "36"
+binrw = "0.15"

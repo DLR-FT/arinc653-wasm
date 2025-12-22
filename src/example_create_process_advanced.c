@@ -21,21 +21,21 @@ void pp_main(void) {
     RETURN_CODE_TYPE err;
 
     // report the message
-    REPORT_APPLICATION_MESSAGE(msg_buf, msg_len, &err);
+    // REPORT_APPLICATION_MESSAGE(msg_buf, msg_len, &err);
 
     // check if an error occured
     if (err) {
       ERROR_MESSAGE_TYPE msg_buf =
           "caused an error during REPORT_APPLICATION_MESSAGE call";
-      RAISE_APPLICATION_ERROR(APPLICATION_ERROR, msg_buf, sizeof(msg_len),
-                              &err);
+      // RAISE_APPLICATION_ERROR(APPLICATION_ERROR, msg_buf, sizeof(msg_len),
+      //                         &err);
     }
 
     // increment the counter
     i += 1;
 
     // wait for next iteration
-    PERIODIC_WAIT(&err);
+    // PERIODIC_WAIT(&err);
   }
 }
 
