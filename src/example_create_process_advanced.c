@@ -1,5 +1,7 @@
 #include "ARINC653-wasm.h"
 
+SAMPLING_PORT_ID_TYPE sid;
+
 // Function prototypes
 void pp_main(void);
 
@@ -19,15 +21,18 @@ void pp_main(void) {
 
     // (error) return code
     RETURN_CODE_TYPE err;
+    VALIDITY_TYPE val;
 
+    READ_SAMPLING_MESSAGE(sid, msg_buf, &msg_len, &val, &err);
     // report the message
     REPORT_APPLICATION_MESSAGE(msg_buf, msg_len, &err);
+    // WRITE_SAMPLING_MESSAGE(sid, msg_buf,msg_len, &err);
 
     // check if an error occured
     if (err) {
       ERROR_MESSAGE_TYPE msg_buf =
           "caused an error during REPORT_APPLICATION_MESSAGE call";
-      RAISE_APPLICATION_ERROR(APPLICATION_ERROR, msg_buf, sizeof(msg_len),
+      RAISE_APPLICATION_ERROR(APPLICATION_ERROR, msg_buf, sizeof(msg_buf),
                               &err);
     }
 
@@ -36,6 +41,9 @@ void pp_main(void) {
 
     // wait for next iteration
     PERIODIC_WAIT(&err);
+    if (i == 9) {
+      // return;
+    }
   }
 }
 
@@ -52,5 +60,9 @@ int main(void) {
   PROCESS_ID_TYPE pid;
   RETURN_CODE_TYPE err;
 
+  // CREATE_SAMPLING_PORT("test", 0x1000, SOURCE, 0x1000, &sid, &err);
+  CREATE_SAMPLING_PORT("test", 0x1000, DESTINATION, 0x1000, &sid, &err);
   CREATE_PROCESS(&pa, &pid, &err);
+  START(pid, &err);
+  SET_PARTITION_MODE(NORMAL, &err);
 }

@@ -1,0 +1,632 @@
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: .direnv
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+src/
+  a653.rs
+  api.rs
+  lib.rs
+  main.rs
+.envrc
+Cargo.toml
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/a653.rs">
+use std::{
+    cell::UnsafeCell,
+    collections::{BTreeMap, BTreeSet},
+    ffi::CStr,
+    os::unix::thread::JoinHandleExt,
+    sync::{Arc, RwLock},
+};
+
+use a653rs::prelude::OperatingMode;
+use anyhow::{Context, anyhow};
+use binrw::{BinRead, BinReaderExt, NullString};
+use log::{debug, info, trace};
+use wasmtime::{
+    AsContext, AsContextMut, Caller, Func, Instance, Linker, Module, SharedMemory, Store,
+};
+
+pub struct PartitionContext {
+    pub module_name: String,
+    pub module: Module,
+    pub shared_memory_name: String,
+    pub shared_memory: SharedMemory,
+    pub proc_alloc_name: String,
+    pub processes: RwLock<ProcessTable>,
+}
+
+pub struct ProcessTable {
+    /// From ARINC Process ID(index) to `ProcessAttribute`
+    arinc_procs: [Option<ProcessAttribute>; 128],
+    /// From ARINC Process ID to Linux Process ID
+    arinc_linux_id: BTreeMap<i64, u64>,
+    /// Set containing all ARINC Process IDs which are enabled
+    enabled_arinc_id: BTreeSet<i64>,
+}
+
+impl ProcessTable {
+    pub const fn new() -> Self {
+        ProcessTable {
+            arinc_procs: [const { None }; 128],
+            arinc_linux_id: BTreeMap::new(),
+            enabled_arinc_id: BTreeSet::new(),
+        }
+    }
+
+    fn find_attr(&self, attr: &ProcessAttribute) -> Option<i64> {
+        self.arinc_procs
+            .iter()
+            .enumerate()
+            .flat_map(|(i, opt)| opt.as_ref().map(|a| (i, a)))
+            .find(|(_, a)| attr.eq(a))
+            .map(|(i, _)| i as i64)
+    }
+
+    fn insert_attr(&mut self, attr: ProcessAttribute) -> Option<i64> {
+        if let index @ Some(_) = self.find_attr(&attr) {
+            return index;
+        }
+        let (i, slot) = self
+            .arinc_procs
+            .iter_mut()
+            .enumerate()
+            .find(|(_, a)| a.is_none())?;
+        assert!(slot.is_none());
+        let _ = slot.insert(attr);
+        Some(i as i64)
+    }
+
+    fn enable_arinc_pid(&mut self, pid: i64) {
+        if let Some(Some(_)) = self.arinc_procs.get(pid as usize) {
+            self.enabled_arinc_id.insert(pid);
+        }
+    }
+
+    fn spawn_all_processes(&mut self, ctx: &Arc<PartitionContext>) -> anyhow::Result<()> {
+        let enabled: Vec<_> = self.enabled_arinc_id.iter().copied().collect();
+        for pid in enabled {
+            self.spawn_process(pid, ctx)?;
+        }
+        Ok(())
+    }
+
+    fn spawn_process(&mut self, pid: i64, ctx: &Arc<PartitionContext>) -> anyhow::Result<u64> {
+        let Some(Some(attr)) = self.arinc_procs.get(pid as usize) else {
+            anyhow::bail!("No proc defined for Pid({pid})");
+        };
+
+        let (mut instance, mut store) = init_process(ctx)?;
+        let func = find_function(attr.entry_point as u64, &mut instance, &mut store).context(
+            format!("Could not find function({}) in instance", attr.entry_point),
+        )?;
+        debug!("{func:?}");
+
+        let handle = std::thread::spawn(move || {
+            let res = func.call(&mut store, &[], &mut []);
+            debug!("Process ended with: {res:?}")
+        });
+        let linux_pid = handle.as_pthread_t();
+        self.arinc_linux_id.insert(pid, linux_pid);
+        debug!("Spawned ARINC PID({pid}) as Linux PID({linux_pid})");
+
+        Ok(linux_pid)
+    }
+}
+
+#[derive(BinRead, Debug, PartialEq)]
+#[br(little)]
+pub struct ProcessAttribute {
+    period: i64,
+    time_capacity: i64,
+    entry_point: i32,
+    stack_size: u32,
+    base_priority: i32,
+    deadline: i32,
+    name: NullString,
+}
+
+// size of processattribute + MAX_NAME_LENGTH(32)
+const PROC_ATTR_BUFFER_SIZE: usize = std::mem::size_of::<ProcessAttribute>() + 32;
+
+type ProcAttrBuffer = [u8; PROC_ATTR_BUFFER_SIZE];
+
+pub trait ArincProvider {
+    fn create_process(&self, attributes: ProcessAttribute) -> anyhow::Result<i64>;
+    fn report_application_message(&self, msg: &str) -> anyhow::Result<()>;
+    fn start(&self, pid: i64) -> anyhow::Result<()>;
+    fn set_partition_mode(&self, mode: OperatingMode) -> anyhow::Result<()>;
+}
+
+impl ArincProvider for Arc<PartitionContext> {
+    fn create_process(&self, attributes: ProcessAttribute) -> anyhow::Result<i64> {
+        let mut table = self
+            .processes
+            .write()
+            .map_err(|_| anyhow!("Could not lock process table"))?;
+        let pid = table.insert_attr(attributes).unwrap();
+        debug!("Assigned ARINC653 PID({pid}) to process");
+        Ok(pid)
+    }
+
+    fn report_application_message(&self, msg: &str) -> anyhow::Result<()> {
+        info!("Reported Message: {msg}");
+        Ok(())
+    }
+
+    fn start(&self, pid: i64) -> anyhow::Result<()> {
+        let mut table = self
+            .processes
+            .write()
+            .map_err(|_| anyhow!("Could not lock process table"))?;
+        table.enable_arinc_pid(pid);
+        Ok(())
+    }
+
+    fn set_partition_mode(&self, mode: OperatingMode) -> anyhow::Result<()> {
+        if let OperatingMode::Normal = mode {
+            {
+                let mut table = self
+                    .processes
+                    .write()
+                    .map_err(|_| anyhow!("Could not lock process table"))?;
+                table.spawn_all_processes(self)?;
+            }
+            loop {
+                std::hint::spin_loop();
+            }
+        }
+        Ok(())
+    }
+}
+
+pub trait CallerExt {
+    fn extract_shmem(&mut self) -> anyhow::Result<SharedMemory>;
+}
+
+impl<T> CallerExt for Caller<'_, T> {
+    fn extract_shmem(&mut self) -> anyhow::Result<SharedMemory> {
+        let mem = self
+            .get_export("memory")
+            .context("Could not get `memory` from `caller`")?;
+        mem.into_shared_memory()
+            .context("Could not get shared memory from `memory`")
+    }
+}
+
+pub trait ShmemExt {
+    fn extract_proc_attrs(&self, attr_ptr: i32) -> anyhow::Result<ProcessAttribute>;
+    fn extract_unsafe_cell_byte_slice(
+        &self,
+        ptr: i32,
+        len: usize,
+    ) -> anyhow::Result<&[UnsafeCell<u8>]>;
+    fn extract_byte_slice(&self, ptr: i32, len: usize) -> anyhow::Result<Vec<u8>>;
+    fn extract_str_slice(&self, ptr: i32, len: usize) -> anyhow::Result<String>;
+    fn write_i64(&self, ptr: i32, val: i64) -> anyhow::Result<()>;
+    fn write_u8(&self, ptr: i32, val: u8) -> anyhow::Result<()>;
+}
+
+impl ShmemExt for SharedMemory {
+    fn extract_proc_attrs(&self, attr_ptr: i32) -> anyhow::Result<ProcessAttribute> {
+        let attr_ptr = unsafe { self.data().as_ptr().byte_add(attr_ptr as usize) };
+        let attr_buffer: ProcAttrBuffer = unsafe { std::ptr::read_volatile(attr_ptr as _) };
+        let mut attr_reader = binrw::io::Cursor::new(attr_buffer);
+        let attr: ProcessAttribute = attr_reader.read_le().unwrap();
+        debug!("Got attribute: {attr:?}");
+        Ok(attr)
+    }
+
+    fn extract_unsafe_cell_byte_slice(
+        &self,
+        ptr: i32,
+        len: usize,
+    ) -> anyhow::Result<&[UnsafeCell<u8>]> {
+        let ptr = ptr as usize;
+        self.data().get(ptr..(ptr + len)).context(format!(
+            "ptr({ptr})..(ptr({ptr}) + len({len})) is out of range of SharedMemory([_; {}])",
+            self.data_size()
+        ))
+    }
+
+    fn extract_byte_slice(&self, ptr: i32, len: usize) -> anyhow::Result<Vec<u8>> {
+        let slice = self.extract_unsafe_cell_byte_slice(ptr, len)?;
+        let slice_buffer = slice
+            .iter()
+            .map(|byte| unsafe { std::ptr::read_volatile(byte.get()) })
+            .collect();
+        Ok(slice_buffer)
+    }
+
+    fn extract_str_slice(&self, ptr: i32, len: usize) -> anyhow::Result<String> {
+        let bytes = self.extract_byte_slice(ptr, len)?;
+        Ok(CStr::from_bytes_until_nul(&bytes)?.to_str()?.to_string())
+    }
+
+    fn write_i64(&self, ptr: i32, val: i64) -> anyhow::Result<()> {
+        let slice = self.extract_unsafe_cell_byte_slice(ptr, std::mem::size_of::<i64>())?;
+        let val = val.to_le_bytes();
+        assert_eq!(slice.len(), val.len());
+        for (src, dst) in val.into_iter().zip(slice) {
+            unsafe { std::ptr::write_volatile(dst.get(), src) };
+        }
+        Ok(())
+    }
+
+    fn write_u8(&self, ptr: i32, val: u8) -> anyhow::Result<()> {
+        let slice = self.extract_unsafe_cell_byte_slice(ptr, std::mem::size_of::<u8>())?;
+        let val = val.to_le_bytes();
+        assert_eq!(slice.len(), val.len());
+        for (src, dst) in val.into_iter().zip(slice) {
+            unsafe { std::ptr::write_volatile(dst.get(), src) };
+        }
+        Ok(())
+    }
+}
+
+pub fn host_create_process(
+    mut caller: Caller<'_, Arc<PartitionContext>>,
+    attr_ptr: i32,
+    pid_ptr: i32,
+    ret_ptr: i32,
+) -> anyhow::Result<()> {
+    trace!("Entered CREATE_PROCESS({attr_ptr:#x}, {pid_ptr:#x}, {ret_ptr:#x})");
+
+    let mem = caller.extract_shmem()?;
+    let provider = caller.data();
+    let attr = mem.extract_proc_attrs(attr_ptr)?;
+    let pid = provider.create_process(attr)?;
+
+    mem.write_i64(pid_ptr, pid)?;
+    // TODO return correct return value
+    mem.write_u8(ret_ptr, 0)?;
+
+    Ok(())
+}
+
+pub fn host_report_application_message(
+    mut caller: Caller<'_, Arc<PartitionContext>>,
+    msg_ptr: i32,
+    len: i32,
+    ret_ptr: i32,
+) -> anyhow::Result<()> {
+    trace!("Entered REPORT_APPLICATION_MESSAGE({msg_ptr:#x}, {len}, {ret_ptr:#x})");
+    let mem = caller.extract_shmem()?;
+    let provider = caller.data();
+    let msg = mem.extract_str_slice(msg_ptr, len as usize)?;
+    provider.report_application_message(&msg)?;
+
+    // TODO return correct return value
+    mem.write_u8(ret_ptr, 0)?;
+    Ok(())
+}
+
+pub fn host_start(
+    mut caller: Caller<'_, Arc<PartitionContext>>,
+    process_id: i64,
+    ret_ptr: i32,
+) -> anyhow::Result<()> {
+    trace!("Entered START({process_id}, {ret_ptr:#x})");
+    let mem = caller.extract_shmem()?;
+    let provider = caller.data();
+    provider.start(process_id)?;
+
+    // TODO return correct return value
+    mem.write_u8(ret_ptr, 0)?;
+    Ok(())
+}
+
+pub fn host_set_partition_mode(
+    mut caller: Caller<'_, Arc<PartitionContext>>,
+    operating_mode: i32,
+    ret_ptr: i32,
+) -> anyhow::Result<()> {
+    trace!("Entered SET_PARTITION_MODE({operating_mode}, {ret_ptr:#x})");
+    let mem = caller.extract_shmem()?;
+    let provider = caller.data();
+    let mode = OperatingMode::from_repr(operating_mode as u32);
+    provider.set_partition_mode(mode.unwrap())?;
+
+    // TODO return correct return value
+    mem.write_u8(ret_ptr, 0)?;
+    Ok(())
+}
+
+pub fn register_arinc_functions(linker: &mut Linker<Arc<PartitionContext>>) -> anyhow::Result<()> {
+    linker.func_wrap("arinc653:p1@0.1.0", "CREATE_PROCESS", host_create_process)?;
+    linker
+        .func_wrap(
+            "arinc653:p1@0.1.0",
+            "REPORT_APPLICATION_MESSAGE",
+            host_report_application_message,
+        )
+        .context("could not add `REPORT_APPLICATION_MESSAGE` host function")?;
+    linker
+        .func_wrap("arinc653:p1@0.1.0", "START", host_start)
+        .context("could not add `START` host function")?;
+    linker
+        .func_wrap(
+            "arinc653:p1@0.1.0",
+            "SET_PARTITION_MODE",
+            host_set_partition_mode,
+        )
+        .context("could not add `SET_PARTITION_MODE` host function")?;
+    Ok(())
+}
+
+pub fn register_shared_memory(
+    linker: &mut Linker<Arc<PartitionContext>>,
+    store: impl AsContext<Data = Arc<PartitionContext>>,
+) -> anyhow::Result<()> {
+    linker
+        .define(
+            &store,
+            &store.as_context().data().module_name,
+            &store.as_context().data().shared_memory_name,
+            store.as_context().data().shared_memory.clone(),
+        )
+        .context("shared memory could not be linked in")?;
+    Ok(())
+}
+
+pub fn instantiate_process(
+    linker: &mut Linker<Arc<PartitionContext>>,
+    mut store: impl AsContextMut<Data = Arc<PartitionContext>>,
+) -> anyhow::Result<Instance> {
+    let ctx = store.as_context().data().clone();
+    let instance = linker
+        .instantiate(&mut store, &ctx.module)
+        .expect("module could not be instantiated");
+    let proc_alloc = instance
+        .get_typed_func::<(), (i32,)>(&mut store, &ctx.proc_alloc_name)
+        .expect("module::proc_alloc could not be found");
+    let proc_alloc_result = proc_alloc
+        .call(&mut store, ())
+        .expect("module::proc_alloc had a trap");
+    if proc_alloc_result.0 != 1 {
+        panic!("module::proc_alloc result not 1");
+    }
+    Ok(instance)
+}
+
+pub fn init_process(
+    ctx: &Arc<PartitionContext>,
+) -> anyhow::Result<(Instance, Store<Arc<PartitionContext>>)> {
+    let mut store = Store::new(ctx.module.engine(), ctx.clone());
+    let mut linker = Linker::new(ctx.module.engine());
+    register_shared_memory(&mut linker, &store)?;
+    register_arinc_functions(&mut linker)?;
+    let instance = instantiate_process(&mut linker, &mut store)?;
+
+    Ok((instance, store))
+}
+
+pub fn find_function(
+    func_ref: u64,
+    instance: &mut Instance,
+    mut store: impl AsContextMut<Data = Arc<PartitionContext>>,
+) -> Option<Func> {
+    instance
+        .get_export(&mut store, "__indirect_function_table")?
+        .into_table()?
+        .get(store.as_context_mut(), func_ref)?
+        .unwrap_func()
+        .copied()
+}
+</file>
+
+<file path="src/api.rs">
+
+</file>
+
+<file path="src/lib.rs">
+use std::sync::{Arc, RwLock};
+
+use a653::{PartitionContext, ProcessTable, init_process};
+use wasmtime::*;
+
+mod a653;
+mod api;
+
+fn infer_shared_mem_type(
+    module: &Module,
+    host_module_name: &str,
+    shared_memory_name: &str,
+) -> Option<(u32, Option<u32>)> {
+    // https://webassembly.github.io/threads/core/valid/types.html#import-subtyping
+
+    let mem_type = module.imports().find_map(|import| {
+        if import.module() != host_module_name || import.name() != shared_memory_name {
+            return None;
+        }
+        match import.ty() {
+            ExternType::Memory(memory_type) => {
+                if memory_type.is_shared() {
+                    Some(memory_type)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    })?;
+
+    // always fits in u32 according to wasmtime docs
+    let n1 = mem_type.minimum().try_into().unwrap();
+    let m1 = mem_type.maximum().map(|m2| m2.try_into().unwrap());
+
+    Some((n1, m1))
+}
+
+pub fn run(
+    host_module_name: &str,
+    shared_memory_name: &str,
+    proc_alloc_name: &str,
+    main_function_name: &str,
+    main_argc_value: i32,
+    main_argv_value: i32,
+    wasm_module_path: &str,
+) -> i32 {
+    let engine = Engine::default();
+    let module = Module::from_file(&engine, wasm_module_path).unwrap();
+
+    let (shared_memory_min_size, Some(shared_memory_max_size)) =
+        infer_shared_mem_type(&module, host_module_name, shared_memory_name)
+            .expect("the modules does not define a shared memory type")
+    else {
+        panic!("wasmtime cannot handle unspecified maximum shared memory size");
+    };
+
+    let shared_memory = SharedMemory::new(
+        &engine,
+        MemoryType::shared(shared_memory_min_size, shared_memory_max_size),
+    )
+    .expect("shared memory could not be instantiated");
+
+    let module_name = host_module_name.to_owned();
+    let shared_memory_name = shared_memory_name.to_owned();
+    let main_function_name = main_function_name.to_owned();
+    let proc_alloc_name = proc_alloc_name.to_owned();
+
+    let ctx = Arc::new(PartitionContext {
+        module_name,
+        module,
+        shared_memory_name,
+        shared_memory,
+        proc_alloc_name,
+        processes: RwLock::new(ProcessTable::new()),
+    });
+
+    let (instance, mut store) = init_process(&ctx).unwrap();
+
+    let main = instance
+        .get_typed_func::<(i32, i32), (i32,)>(&mut store, &main_function_name)
+        .expect("module::main could not be found");
+    let res = main.call(&mut store, (main_argc_value, main_argv_value));
+    log::error!("{res:?}");
+    loop {
+        core::hint::spin_loop();
+    }
+    // .expect("module::main had a trap")
+    // .0
+}
+</file>
+
+<file path="src/main.rs">
+use arinc653_wasm_harness::run;
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+pub struct Cli {
+    #[arg(long, default_value = "env")]
+    pub host_module_name: String,
+    #[arg(long, default_value = "memory")]
+    pub shared_memory_name: String,
+    #[arg(long, default_value = "__apex_wasm_proc_alloc")]
+    pub proc_alloc_name: String,
+    #[arg(long, default_value = "main")]
+    pub main_function_name: String,
+    #[arg(long, default_value = "0")]
+    pub main_argc_value: i32,
+    #[arg(long, default_value = "0")]
+    pub main_argv_value: i32,
+    #[arg(required = true)]
+    pub wasm_module_path: String,
+}
+
+fn main() {
+    env_logger::Builder::from_default_env()
+        .filter_module("wasmtime", log::LevelFilter::Warn)
+        .filter_module("cranelift_codegen", log::LevelFilter::Warn)
+        .filter_module("cranelift_frontend", log::LevelFilter::Warn)
+        .init();
+
+    let Cli {
+        host_module_name,
+        shared_memory_name,
+        proc_alloc_name,
+        main_function_name,
+        main_argc_value,
+        main_argv_value,
+        wasm_module_path,
+    } = Cli::parse();
+    let result = run(
+        &host_module_name,
+        &shared_memory_name,
+        &proc_alloc_name,
+        &main_function_name,
+        main_argc_value,
+        main_argv_value,
+        &wasm_module_path,
+    );
+
+    println!("{wasm_module_path} returned: {result}")
+}
+</file>
+
+<file path=".envrc">
+use flake ../../#rust
+</file>
+
+<file path="Cargo.toml">
+[package]
+name = "arinc653-wasm-harness"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+wasmtime = "36"
+binrw = "0.15"
+log = "0.4"
+env_logger = "0.11"
+a653rs = { version = "0.6", features = ["strum"]}
+anyhow = "1.0"
+</file>
+
+</files>
