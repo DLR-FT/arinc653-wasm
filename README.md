@@ -22,6 +22,8 @@
   **Reason**: `__externref_t` is not representable in Linear Memory. Hence, it can not become the field of a struct. However, the `PROCESS_ATTRIBUTE_TYPE` struct comprises an `ENTRY_POINT` field holding a function pointer. As `__externref_t` can not be used there, it is necessary to expose the table for function pointers. Therefore, any use of `__externref_t` shall be avoided, in order to keep all function pointer representations consistent.
 - **Choice**: Use `__wasm__` preprocessor `#define` to conditionally annotate official APEX header functions with `import_module` & `import_name` attributes.
   **Reason**: Clang is the sole compiler, that is capable to compile C to Wasm reasonably. Heaving two headers, one without and one with Wasm specific annotations, is unfavorable.
+- **Choice**: Use `RETURN_CODE_TYPE` -> `i32`
+  **Reason**: [Chapter 6.7.2.2 of ISO/IEC 9899:2018 ("C17")](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2310.pdf#subsubsection.6.7.2.2) states that the representation of enum types is implementation dependent. However, there is not much of a choice here, since the [Wasm C ABI](https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md) dictates `enum`s to be represented as `i32`. [Chapter 6.7.3.3 of ISO/IEC 9899:2024 ("C24")](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#subsubsection.6.7.3.3) introduces the possibility of specifying the underlying type for `enum`s, which we intentionally ignore to maintain compatibility with older versions of the C standard.
 
 # Legal Matter
 
