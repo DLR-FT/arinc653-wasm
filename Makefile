@@ -35,6 +35,7 @@ LAYOUT_EXT          = layout.txt
 
 
 ARINC_DOWNLOADS     = arinc653.h arinc653p1--ada83 arinc653p1--ada95
+ARINC_DOWNLOADS    += arinc653p1-6-cpp.h.zip
 ARINC_DOWNLOADS    += arinc653p2.h arinc653p2-ada83 arinc653p2-ada95
 ARINC_DOWNLOADS    += arinc653typesp1s5 arinc653p2s4
 
@@ -86,6 +87,8 @@ setup: $(GENERATED_HEADERS)
 # rule to download the ARINC files
 $(TARGET_DIR)/downloads/%.zip:
 	@mkdir -p -- $(@D)
+	# Alternative download URL:
+	# https://wcm14.sae.org/site/binaries/content/assets/itc/content/support-files/$(@F)
 	curl --user-agent 'Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0' \
 		--location --output-dir $(TARGET_DIR)/downloads/ --remote-name-all \
 		https://brx-content.fullsight.org/site/binaries/content/assets/itc/content/support-files/$(@F)
