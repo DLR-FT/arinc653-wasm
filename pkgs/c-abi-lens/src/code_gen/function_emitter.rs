@@ -178,7 +178,7 @@ fn emit_per_field_functions(
     );
     code_snippets.push(CSnippet::Newline);
 
-    // helper functions for offset of the field withing the struct
+    // helper functions for offset of the field within the struct
     code_snippets.push(CFunc {
         comment: format!("\
             `offsetof({struct_name}, {field_name})`\n\
@@ -192,21 +192,15 @@ fn emit_per_field_functions(
     }.into());
     code_snippets.push(CSnippet::Newline);
 
-    // string to anounce the presence of byte-swapping
+    // string to announce the presence of byte-swapping
     let maybe_endianness_swapped = if swap_endianness {
         ", with endianness swapped"
     } else {
         ""
     };
 
-    // function/macro to perform byte swapping
-    let byte_swap_fn = match generic_c_field_repr.element_size_bytes()? {
-        1 => "".to_owned(),
-        n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
-        n => {
-            bail!("unable to perform a byte swap for an integer that is {n} bytes wide")
-        }
-    };
+    // NOTE: byte_swap_fn is now computed inside the arms that need it,
+    // to avoid bailing out early for Record types (nested structs)
 
     use clang::TypeKind::*;
     match (
@@ -214,6 +208,25 @@ fn emit_per_field_functions(
         canonical_type.get_element_type(),
         generic_c_field_repr.element_type(),
     ) {
+        // nested struct: just return base address pointer, no swap needed/possible
+        (Record, _, _) => {
+            code_snippets.insert(code_snippets.len() - 2, CFunc {
+                comment: format!("\
+                    Get struct address `{struct_name}.{field_name}`\n\
+                    \n\
+                    Returns the field `{field_name}`'s struct address from an instance of the `{struct_name}` struct\
+                "),
+                return_type: RepresentableCType::Opaque { bytes: None },
+                name: function_name_gen("get_struct_base_addr"),
+                arguments: [(
+                    RepresentableCType::Opaque { bytes: None },
+                    "struct_base_addr".to_owned(),
+                )].into(),
+                body: format!("return (void *)((uint8_t *)struct_base_addr + {offset_bytes});"),
+            }.into());
+            code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
+        }
+
         // integer or float or pointer
         (
             CharS | CharU | SChar | UChar | Short | UShort | Int | UInt | Long | ULong | LongLong
@@ -221,6 +234,12 @@ fn emit_per_field_functions(
             _,
             _,
         ) => {
+            let byte_swap_fn = match generic_c_field_repr.element_size_bytes()? {
+                1 => "".to_owned(),
+                n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
+                n => bail!("unable to perform a byte swap for an integer that is {n} bytes wide"),
+            };
+
             // C code string that might swap the bytes of `value` or does nothing
             let maybe_byteswap =
                 if swap_endianness && generic_c_field_repr.element_size_bytes()? != 1 {
@@ -279,6 +298,12 @@ fn emit_per_field_functions(
             Some(_),
             RepresentableCType::Integer { .. } | RepresentableCType::Float { .. },
         ) => {
+            let _byte_swap_fn = match generic_c_field_repr.element_size_bytes()? {
+                1 => "".to_owned(),
+                n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
+                n => bail!("unable to perform a byte swap for an integer that is {n} bytes wide"),
+            };
+
             let total_bytes = generic_c_field_repr.total_size_bytes()?;
             let element_bytes = generic_c_field_repr.element_size_bytes()?;
 
