@@ -51,6 +51,16 @@ impl RepresentableCType {
                 })
             }
 
+            // pointers are represented as unsigned integers of the target's pointer width
+            // (e.g. uint32_t on wasm32, uint64_t on x86_64)
+            (Pointer, 1 | 2 | 4 | 8, _) => {
+                let size = size_of.try_into().unwrap();
+                Ok(RepresentableCType::Integer {
+                    bytes: size,
+                    is_unsigned: true, // pointers are always treated as unsigned
+                })
+            }
+
             // its a float of some sorts
             (Float | Double, 4 | 8, _) => {
                 let size = size_of.try_into().unwrap(); // 4 | 8 all fit into an u8
