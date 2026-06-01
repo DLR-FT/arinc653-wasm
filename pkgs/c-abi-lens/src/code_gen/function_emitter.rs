@@ -308,7 +308,7 @@ fn emit_per_field_functions(
             let element_bytes = generic_c_field_repr.element_size_bytes()?;
 
             // C code string that copies from `src_name` to `dst_name` and might swap endianness of elements while doing so
-            let copy_and_maybe_byteswap = |src_name, dst_name| {
+            let copy_and_maybe_byteswap = |src_name: &str, dst_name: &str| {
                 if swap_endianness && element_bytes != 1 {
                     // endianness swapping on the target type is not possible for the write case,
                     // because the target addresses within `struct_base_addr` might not be aligned
@@ -338,7 +338,8 @@ fn emit_per_field_functions(
                     (RepresentableCType::Opaque { bytes: None }, "struct_base_addr".to_owned()),
                     (generic_c_field_repr.clone(), "dst".to_owned())
                 ].into(),
-                body: copy_and_maybe_byteswap("struct_base_addr", "dst")
+                // source is struct_base_addr + offset_bytes
+                body: copy_and_maybe_byteswap(&format!("((uint8_t *)struct_base_addr + {offset_bytes})"), "dst")
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
 
@@ -355,7 +356,8 @@ fn emit_per_field_functions(
                     (RepresentableCType::Opaque { bytes: None }, "struct_base_addr".to_owned()),
                     (generic_c_field_repr.clone(), "src".to_owned())
                 ].into(),
-                body: copy_and_maybe_byteswap("src", "struct_base_addr")
+                // destination is struct_base_addr + offset_bytes
+                body: copy_and_maybe_byteswap("src", &format!("((uint8_t *)struct_base_addr + {offset_bytes})"))
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
         }
