@@ -230,7 +230,7 @@ fn emit_per_field_functions(
         // integer or float or pointer
         (
             CharS | CharU | SChar | UChar | Short | UShort | Int | UInt | Long | ULong | LongLong
-            | ULongLong | Float | Double | Enum,
+            | ULongLong | Float | Double | Pointer | Enum,
             _,
             _,
         ) => {
