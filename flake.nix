@@ -2,7 +2,7 @@
   description = "An ARINC 653 WebAssembly SDK";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
