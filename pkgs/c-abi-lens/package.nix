@@ -58,6 +58,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   meta = {
     inherit (cargoToml.package) description homepage;
+    mainProgram = "c-abi-lens";
     license = [
       lib.licenses.asl20
       # OR
