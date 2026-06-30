@@ -63,7 +63,7 @@ let
       # WAMR offers both libiwasm.so and libvmlib.a, the latter offers the static symbols needed for the native code
       postPatch = ''
         substituteInPlace a653_lib_wasm32/Makefile \
-          --replace '/usr/lib/libiwasm.a' "-lvmlib"
+          --replace-fail '/usr/lib/libiwasm.a' "-lvmlib"
       ''
       # Makefile hardcodes to clang, but for the nixpkgs clang is wrapped so that the sysroot is discovered
       # Setting the target explicitly is not needed, and the nixpkgs call the target wasm32-unknown-wasi, not wasm32-wasi
