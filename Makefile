@@ -57,6 +57,8 @@ ALL_TARGET_FILES    = $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE) $(WAT_FILES) $(A
 
 COMPILE_REQUISITES  = $(GENERATED_HEADERS)
 
+# Declare this Makefile aa dependency to all targets, to trigger rebuild after Makefile change
+.EXTRA_PREREQS:= $(abspath $(lastword $(MAKEFILE_LIST)))
 .PHONY: all clean clean-all download-all format layouts setup
 
 
