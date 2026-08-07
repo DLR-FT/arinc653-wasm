@@ -26,7 +26,6 @@ let
       filter = (
         path: type:
         let
-          inherit (builtins) baseNameOf toString;
           inherit (lib.lists) any;
           inherit (lib.strings) hasSuffix removePrefix;
           inherit (lib.trivial) id;
