@@ -100,6 +100,7 @@
                   c-abi-lens,
                   clippy,
                   rustfmt,
+                  rust-analyzer,
                 }:
                 mkShell {
                   inputsFrom = [ c-abi-lens ];
@@ -108,6 +109,7 @@
                     cargo-llvm-cov # cover Rust code
                     clippy # lint Rust code
                     rustfmt # format Rust code
+                    rust-analyzer
                   ];
                 }
               ) { };
