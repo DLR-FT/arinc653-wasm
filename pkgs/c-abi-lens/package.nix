@@ -26,7 +26,6 @@ let
       filter = (
         path: type:
         let
-          inherit (builtins) baseNameOf toString;
           inherit (lib.lists) any;
           inherit (lib.strings) hasSuffix removePrefix;
           inherit (lib.trivial) id;
@@ -59,6 +58,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   meta = {
     inherit (cargoToml.package) description homepage;
+    mainProgram = "c-abi-lens";
     license = [
       lib.licenses.asl20
       # OR

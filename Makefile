@@ -3,6 +3,7 @@ CC                 ?= clang
 C_FLAGS             = --target=wasm32-unknown-wasi -I$(INC_DIR) -nostartfiles
 C_FLAGS            += -matomics -mthread-model posix -pthread
 C_FLAGS            += -Wall -Wextra -Wpedantic -fdiagnostics-color=always
+C_FLAGS            += --no-wasm-opt
 
 C_FLAGS_DEBUG       = $(C_FLAGS) -g
 C_FLAGS_RELEASE     = $(C_FLAGS) -Oz
@@ -56,6 +57,8 @@ ALL_TARGET_FILES    = $(WASM_FILES_DEBUG) $(WASM_FILES_RELEASE) $(WAT_FILES) $(A
 
 COMPILE_REQUISITES  = $(GENERATED_HEADERS)
 
+# Declare this Makefile aa dependency to all targets, to trigger rebuild after Makefile change
+.EXTRA_PREREQS:= $(abspath $(lastword $(MAKEFILE_LIST)))
 .PHONY: all clean clean-all download-all format layouts setup
 
 

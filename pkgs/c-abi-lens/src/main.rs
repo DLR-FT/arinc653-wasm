@@ -8,7 +8,7 @@ use clang::*;
 
 use clap::Parser;
 use cli::Cli;
-use code_gen::{CInclude, CSection, CSnippet, insert_struct_functions};
+use code_gen::{CInclude, CSection, CSnippet, insert_struct_functions, insert_typedef_functions};
 use color_eyre::{Result, eyre::eyre};
 use log::{debug, error};
 
@@ -72,6 +72,24 @@ fn main() -> Result<()> {
         .filter(|e| e.get_kind() == EntityKind::StructDecl)
         .collect::<Vec<_>>();
 
+    // Get the typedefs in this translation unit (excluding Record/struct types, those are handled above)
+    let typedefs = tu
+        .get_entity()
+        .get_children()
+        .into_iter()
+        .filter(|e| {
+            if e.get_kind() != EntityKind::TypedefDecl {
+                return false;
+            }
+            if let Some(ty) = e.get_type() {
+                let canonical_kind = ty.get_canonical_type().get_kind();
+                canonical_kind != TypeKind::Record
+            } else {
+                false
+            }
+        })
+        .collect::<Vec<_>>();
+
     let mut code_snippets = Vec::new();
 
     // section header for the entire library
@@ -114,6 +132,15 @@ fn main() -> Result<()> {
 
     code_snippets.push(CSnippet::Newline);
     code_snippets.push(CSnippet::Newline);
+
+    // Print information about the typedefs
+    for typedef_ in typedefs {
+        if let Err(e) = insert_typedef_functions(&mut code_snippets, &typedef_, endianness_swap) {
+            error!(
+                "skipping to the next typedef, because the following error occured while generating typedef functions:\n{e}"
+            )
+        }
+    }
 
     // Print information about the structs
     for struct_ in structs {

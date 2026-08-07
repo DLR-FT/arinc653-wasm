@@ -178,7 +178,7 @@ fn emit_per_field_functions(
     );
     code_snippets.push(CSnippet::Newline);
 
-    // helper functions for offset of the field withing the struct
+    // helper functions for offset of the field within the struct
     code_snippets.push(CFunc {
         comment: format!("\
             `offsetof({struct_name}, {field_name})`\n\
@@ -192,21 +192,15 @@ fn emit_per_field_functions(
     }.into());
     code_snippets.push(CSnippet::Newline);
 
-    // string to anounce the presence of byte-swapping
+    // string to announce the presence of byte-swapping
     let maybe_endianness_swapped = if swap_endianness {
         ", with endianness swapped"
     } else {
         ""
     };
 
-    // function/macro to perform byte swapping
-    let byte_swap_fn = match generic_c_field_repr.element_size_bytes()? {
-        1 => "".to_owned(),
-        n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
-        n => {
-            bail!("unable to perform a byte swap for an integer that is {n} bytes wide")
-        }
-    };
+    // NOTE: byte_swap_fn is now computed inside the arms that need it,
+    // to avoid bailing out early for Record types (nested structs)
 
     use clang::TypeKind::*;
     match (
@@ -214,13 +208,38 @@ fn emit_per_field_functions(
         canonical_type.get_element_type(),
         generic_c_field_repr.element_type(),
     ) {
+        // nested struct: just return base address pointer, no swap needed/possible
+        (Record, _, _) => {
+            code_snippets.insert(code_snippets.len() - 2, CFunc {
+                comment: format!("\
+                    Get struct address `{struct_name}.{field_name}`\n\
+                    \n\
+                    Returns the field `{field_name}`'s struct address from an instance of the `{struct_name}` struct\
+                "),
+                return_type: RepresentableCType::Opaque { bytes: None },
+                name: function_name_gen("get_struct_base_addr"),
+                arguments: [(
+                    RepresentableCType::Opaque { bytes: None },
+                    "struct_base_addr".to_owned(),
+                )].into(),
+                body: format!("return (void *)((uint8_t *)struct_base_addr + {offset_bytes});"),
+            }.into());
+            code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
+        }
+
         // integer or float or pointer
         (
             CharS | CharU | SChar | UChar | Short | UShort | Int | UInt | Long | ULong | LongLong
-            | ULongLong | Float | Double | Enum,
+            | ULongLong | Float | Double | Pointer | Enum,
             _,
             _,
         ) => {
+            let byte_swap_fn = match generic_c_field_repr.element_size_bytes()? {
+                1 => "".to_owned(),
+                n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
+                n => bail!("unable to perform a byte swap for an integer that is {n} bytes wide"),
+            };
+
             // C code string that might swap the bytes of `value` or does nothing
             let maybe_byteswap =
                 if swap_endianness && generic_c_field_repr.element_size_bytes()? != 1 {
@@ -279,11 +298,17 @@ fn emit_per_field_functions(
             Some(_),
             RepresentableCType::Integer { .. } | RepresentableCType::Float { .. },
         ) => {
+            let _byte_swap_fn = match generic_c_field_repr.element_size_bytes()? {
+                1 => "".to_owned(),
+                n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
+                n => bail!("unable to perform a byte swap for an integer that is {n} bytes wide"),
+            };
+
             let total_bytes = generic_c_field_repr.total_size_bytes()?;
             let element_bytes = generic_c_field_repr.element_size_bytes()?;
 
             // C code string that copies from `src_name` to `dst_name` and might swap endianness of elements while doing so
-            let copy_and_maybe_byteswap = |src_name, dst_name| {
+            let copy_and_maybe_byteswap = |src_name: &str, dst_name: &str| {
                 if swap_endianness && element_bytes != 1 {
                     // endianness swapping on the target type is not possible for the write case,
                     // because the target addresses within `struct_base_addr` might not be aligned
@@ -313,7 +338,8 @@ fn emit_per_field_functions(
                     (RepresentableCType::Opaque { bytes: None }, "struct_base_addr".to_owned()),
                     (generic_c_field_repr.clone(), "dst".to_owned())
                 ].into(),
-                body: copy_and_maybe_byteswap("struct_base_addr", "dst")
+                // source is struct_base_addr + offset_bytes
+                body: copy_and_maybe_byteswap(&format!("((uint8_t *)struct_base_addr + {offset_bytes})"), "dst")
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
 
@@ -330,7 +356,8 @@ fn emit_per_field_functions(
                     (RepresentableCType::Opaque { bytes: None }, "struct_base_addr".to_owned()),
                     (generic_c_field_repr.clone(), "src".to_owned())
                 ].into(),
-                body: copy_and_maybe_byteswap("src", "struct_base_addr")
+                // destination is struct_base_addr + offset_bytes
+                body: copy_and_maybe_byteswap("src", &format!("((uint8_t *)struct_base_addr + {offset_bytes})"))
             }.into());
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
         }
@@ -357,6 +384,178 @@ fn emit_per_field_functions(
             code_snippets.insert(code_snippets.len() - 2, CSnippet::Newline);
         }
     }
+
+    Ok(())
+}
+
+/// Emit all functions for a given typedef
+pub fn insert_typedef_functions(
+    code_snippets: &mut Vec<CSnippet>,
+    typedef_: &clang::Entity,
+    swap_endianness: bool,
+) -> Result<()> {
+    let typedef_name = typedef_.get_name().ok_or_eyre("typedef has no name")?;
+    info!("generating for typedef {typedef_name:?}");
+
+    let typedef_ty = typedef_
+        .get_type()
+        .ok_or_eyre("typedef type is unknown?!")?;
+    let canonical_type = typedef_ty.get_canonical_type();
+    let generic_c_repr = RepresentableCType::new(&canonical_type)?;
+
+    let function_name_gen = |op| format!("{op}__{typedef_name}");
+
+    // section header
+    code_snippets.push(
+        CSection {
+            title: format!(" {typedef_name} "),
+            comment: Default::default(),
+        }
+        .into(),
+    );
+    code_snippets.push(CSnippet::Newline);
+
+    // string to announce the presence of byte-swapping
+    let maybe_endianness_swapped = if swap_endianness {
+        ", with endianness swapped"
+    } else {
+        ""
+    };
+
+    use clang::TypeKind::*;
+    match (canonical_type.get_kind(), canonical_type.get_element_type()) {
+        // integer or float or pointer
+        (
+            CharS | CharU | SChar | UChar | Short | UShort | Int | UInt | Long | ULong | LongLong
+            | ULongLong | Float | Double | Pointer | Enum,
+            _,
+        ) => {
+            let byte_swap_fn = match generic_c_repr.element_size_bytes()? {
+                1 => "".to_owned(),
+                n @ 2 | n @ 4 | n @ 8 => format!("bswap_{}", 8 * n),
+                n => bail!("unable to perform a byte swap for an integer that is {n} bytes wide"),
+            };
+
+            let maybe_byteswap = if swap_endianness && generic_c_repr.element_size_bytes()? != 1 {
+                format!("value = {byte_swap_fn}(value);\n")
+            } else {
+                String::default()
+            };
+
+            // getter
+            code_snippets.push(CFunc {
+                comment: format!("\
+                    Get `{typedef_name}`\n\
+                    \n\
+                    Returns the typedef `{typedef_name}`'s value from memory{maybe_endianness_swapped}\
+                "),
+                return_type: generic_c_repr.clone(),
+                name: function_name_gen("get"),
+                arguments: [
+                     (RepresentableCType::Opaque { bytes: None }, "base_addr".to_owned())
+                ].into(),
+                body: format!("\
+                    {};\n\
+                    memcpy(&value, base_addr, sizeof(value));\n\
+                    {maybe_byteswap}return value;\
+                    ", generic_c_repr.format_as_type(Some("value"))
+                ),
+            }.into());
+            code_snippets.push(CSnippet::Newline);
+
+            // setter
+            code_snippets.push(CFunc {
+                comment: format!("\
+                    Set `{typedef_name}` to `value`\n\
+                    \n\
+                    Overwrites the typedef `{typedef_name}`'s value at a memory location{maybe_endianness_swapped}\
+                "),
+                return_type: RepresentableCType::Void,
+                name: function_name_gen("set"),
+                arguments: [
+                     (RepresentableCType::Opaque { bytes: None }, "base_addr".to_owned()), (generic_c_repr.clone(), "value".to_owned())
+                ].into(),
+                body: format!("\
+                     {maybe_byteswap}\
+                     memcpy(base_addr, &value, sizeof(value));\
+                ")
+            }.into());
+            code_snippets.push(CSnippet::Newline);
+        }
+
+        // array of single-byte elements
+        (ConstantArray, Some(element_ty)) if element_ty.get_sizeof() == Ok(1) => {
+            let total_bytes = generic_c_repr.total_size_bytes()?;
+
+            // reader
+            code_snippets.push(
+                CFunc {
+                    comment: format!(
+                        "\
+                    Read from `{typedef_name}`\n\
+                    \n\
+                    Copies from `{typedef_name}` memory location to `dst`{maybe_endianness_swapped}\
+                "
+                    ),
+                    return_type: RepresentableCType::Void,
+                    name: function_name_gen("read"),
+                    arguments: [
+                        (
+                            RepresentableCType::Opaque { bytes: None },
+                            "base_addr".to_owned(),
+                        ),
+                        (generic_c_repr.clone(), "dst".to_owned()),
+                    ]
+                    .into(),
+                    body: format!("memcpy((uint8_t *)dst, (uint8_t *)base_addr, {total_bytes});"),
+                }
+                .into(),
+            );
+            code_snippets.push(CSnippet::Newline);
+
+            // writer
+            code_snippets.push(CFunc {
+                comment: format!("\
+                    Write to `{typedef_name}`\n\
+                    \n\
+                    Copies from `src` to the `{typedef_name}` memory location{maybe_endianness_swapped}\
+                "),
+                return_type: RepresentableCType::Void,
+                name: function_name_gen("write"),
+                arguments: [
+                    (RepresentableCType::Opaque { bytes: None }, "base_addr".to_owned()), (generic_c_repr.clone(), "src".to_owned())
+                ].into(),
+                body: format!("memcpy((uint8_t *)base_addr, (uint8_t *)src, {total_bytes});"),
+            }.into());
+            code_snippets.push(CSnippet::Newline);
+        }
+
+        (type_kind, maybe_type) => {
+            debug!(
+                "don't know how to represent typedef {typedef_name:?} of kind {type_kind:?} (element: {maybe_type:?}), skipping"
+            );
+            return Ok(());
+        }
+    }
+
+    // sizeof
+    code_snippets.push(
+        CFunc {
+            comment: format!(
+                "\
+`sizeof({typedef_name})`\n\
+\n\
+Returns the size in bytes of the typedef `{typedef_name}`\
+"
+            ),
+            return_type: RepresentableCType::UIntPtr,
+            name: function_name_gen("sizeof"),
+            arguments: vec![],
+            body: format!("return {};", generic_c_repr.total_size_bytes()?),
+        }
+        .into(),
+    );
+    code_snippets.push(CSnippet::Newline);
 
     Ok(())
 }

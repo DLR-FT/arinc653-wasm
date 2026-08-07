@@ -1,54 +1,84 @@
-# SPDX-FileCopyrightText: 2024-2025 wucke13
+# SPDX-FileCopyrightText: 2025-2026 wucke13
 #
 # SPDX-License-Identifier: Apache-2.0
 
 on: [push]
 
-env:
-  EXTRA_NIX_FLAGS: --log-format raw-with-logs --print-build-logs
-
 jobs:
-  check:
-    name: Nix flake check
+  flake-show:
+    name: nix flake show
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
-      - uses: cachix/install-nix-action@v31
+      - uses: actions/checkout@v7
         with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v16
+          # checkout full tree
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
         with:
           name: dlr-ft
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - uses: actions/checkout@v6
-      - run: nix flake check
-  build-pkg:
-    name: ${{ matrix.pkg }} for ${{ matrix.system }}
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - name: Show flake outputs
+        run: nix flake show --quiet
+
+  check-commits:
+    name: Check commits
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        system:
-          - x86_64-linux
-        # Generated using
-        # nix run .#update-ci
-        pkg:
-          - a653lib-wasm
-          - c-abi-lens
-          - check-commits
-          - update-ci
-          - wasm-partitions
+        CHECK_COMMAND:
+          - conform enforce
+          - nix fmt -- --ci
     steps:
-      - uses: cachix/install-nix-action@v31
+      - uses: actions/checkout@v7
         with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v16
+          # checkout full tree
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
+        with:
+          name: dlr-ft
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - name: Checking each commit
+        run: nix shell --inputs-from . .#check-commits nixpkgs#conform nixpkgs#reuse --command ${{ matrix.CHECK_COMMAND }}
+
+  flake-check:
+    name: nix flake check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The default image contains dozens of gigabytes of tools. NixOS config builds get big. Thus,
+      # remove unused tools (Nix provides for all we need!) to get some space.
+      - uses: wimpysworld/nothing-but-nix@main
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
         with:
           name: dlr-ft
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - uses: actions/checkout@v6
-      - id: supported-system
-        name: Skip unsupported builds
-        run: $(nix eval --json .#packages.${{ matrix.system }}.${{ matrix.pkg }}.meta.available)
-      - if: steps.supported-system.conclusion == 'success'
-        run:
-          nix build $EXTRA_NIX_FLAGS .#packages.${{ matrix.system }}.${{ matrix.pkg
-          }}
+      - run: nix flake check
+
+  build:
+    name: nix build
+    needs: [check-commits, flake-check]
+    strategy:
+      matrix:
+        RUNNER:
+          - macos-latest
+          - ubuntu-24.04-arm
+          - ubuntu-latest
+    runs-on: ${{ matrix.RUNNER }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: wimpysworld/nothing-but-nix@main
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
+        with:
+          name: dlr-ft
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - run: nix run --inputs-from . nixpkgs#nix-fast-build -- --flake .#ciJobs --no-nom --skip-cached --result-file result-junit.xml --result-format junit
+      - name: Test Summary
+        uses: test-summary/action@v2
+        with:
+          paths: "result-junit.xml"
+        if: always()

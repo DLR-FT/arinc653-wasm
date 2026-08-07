@@ -2,7 +2,7 @@
   description = "An ARINC 653 WebAssembly SDK";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
@@ -17,8 +17,25 @@
       treefmt-nix,
       ...
     }:
+    let
+      inherit (nixpkgs) lib;
+    in
     {
       overlays.default = import ./overlay.nix;
+
+      # for CI
+      ciJobs = {
+        checks = lib.attrsets.recurseIntoAttrs (self.checks or { });
+        homeConfigurations = lib.attrsets.recurseIntoAttrs (
+          lib.attrsets.mapAttrs (name: value: value.activationPackage) (self.homeConfigurations or { })
+        );
+        nixosConfigurations = lib.attrsets.recurseIntoAttrs (
+          lib.attrsets.mapAttrs (name: value: value.config.system.build.toplevel) (
+            self.nixosConfigurations or { }
+          )
+        );
+        packages = lib.attrsets.recurseIntoAttrs (self.packages or { });
+      };
     }
     //
       flake-utils.lib.eachSystem
