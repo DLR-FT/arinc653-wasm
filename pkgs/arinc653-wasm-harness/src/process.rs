@@ -120,6 +120,10 @@ impl Process {
         self.enabled = true;
     }
 
+    pub fn period(&self) -> i64 {
+        self.attribute.period
+    }
+
     pub fn name(&self) -> String {
         self.attribute.name.to_string()
     }

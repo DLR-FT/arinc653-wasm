@@ -138,7 +138,7 @@ fn emit_per_field_functions(
     ty: clang::Type,
     swap_endianness: bool,
 ) -> Result<()> {
-    if offset_bits % 8 != 0 {
+    if !offset_bits.is_multiple_of(8) {
         bail!("bit offset which is not devisable by 8, this is not implemented yet");
     }
 

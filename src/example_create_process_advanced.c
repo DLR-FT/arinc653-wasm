@@ -46,7 +46,7 @@ void pp_main(void) {
 
 int main(void) {
   PROCESS_ATTRIBUTE_TYPE pa = {
-      .PERIOD = 0,
+      .PERIOD = 1000 * 1000 * 1000,
       .TIME_CAPACITY = 0,
       .ENTRY_POINT = &pp_main,
       .STACK_SIZE = 0x10000, // 64 KiB
@@ -56,7 +56,7 @@ int main(void) {
   };
   PROCESS_ID_TYPE pid;
   PROCESS_ATTRIBUTE_TYPE pa2 = {
-      .PERIOD = 0,
+      .PERIOD = 200 * 1000 * 1000,
       .TIME_CAPACITY = 0,
       .ENTRY_POINT = &pp_main,
       .STACK_SIZE = 0x10000, // 64 KiB

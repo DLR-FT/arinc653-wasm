@@ -8,6 +8,7 @@ use process::ProcessTable;
 use wasmtime::*;
 
 mod a653;
+mod a653_consts;
 mod api;
 pub mod channel;
 pub mod config;
