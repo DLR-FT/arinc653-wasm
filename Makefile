@@ -39,6 +39,10 @@ ARINC_DOWNLOADS     = arinc653.h arinc653p1--ada83 arinc653p1--ada95
 ARINC_DOWNLOADS    += arinc653p2.h arinc653p2-ada83 arinc653p2-ada95
 ARINC_DOWNLOADS    += arinc653typesp1s5 arinc653p2s4
 
+# supplement 6
+ARINC_DOWNLOADS    += arinc653p1-6-ada83 arinc653p1-6-ada95 arinc653p1-6-cpp.h arinc653p1-6.h
+ARINC_DOWNLOADS    += arinc653typesp1s6
+
 
 HEADERS             = $(shell find $(INC_DIR) -type f -name *.$(HEADER_EXT))
 GENERATED_HEADERS   = $(INC_DIR)/ARINC653-wasm.h
@@ -89,9 +93,8 @@ setup: $(GENERATED_HEADERS)
 # rule to download the ARINC files
 $(TARGET_DIR)/downloads/%.zip:
 	@mkdir -p -- $(@D)
-	curl --user-agent 'Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0' \
-		--location --output-dir $(TARGET_DIR)/downloads/ --remote-name-all \
-		https://brx-content.fullsight.org/site/binaries/content/assets/itc/content/support-files/$(@F)
+	curl --location --output-dir $(TARGET_DIR)/downloads/ --remote-name-all \
+		https://wcm14.sae.org/site/binaries/content/assets/itc/content/support-files/$(@F)
 	
 # rule to extract the ARINC headerfiles
 $(TARGET_DIR)/unprocessed-headers/ARINC653.h $(TARGET_DIR)/unprocessed-headers/ARINC653P2.h &: $(TARGET_DIR)/downloads/arinc653.h.zip $(TARGET_DIR)/downloads/arinc653p2.h.zip
