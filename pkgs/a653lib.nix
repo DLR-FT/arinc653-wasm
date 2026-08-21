@@ -9,6 +9,8 @@
   pkg-config,
   pkgsCross,
 
+  breakpointHook,
+
   wamr,
   wasmtime,
 
@@ -31,6 +33,8 @@ stdenv.mkDerivation {
     cmake
     pkg-config
     pkgsCross.wasi32.stdenv.cc
+
+    breakpointHook
   ];
 
   postPatch = ''
@@ -39,16 +43,18 @@ stdenv.mkDerivation {
   '';
 
   buildInputs = [
-    # Avoid the following error upon linking a653lib
-    #
-    # undefined references to `__aarch64_ldadd4_acq'
-    (wamr.overrideAttrs (_: {
-      env = lib.attrsets.optionalAttrs (stdenv.hostPlatform.isAarch) {
+    wasmtime
+  ]
+  ++ lib.lists.optional (with stdenv.hostPlatform; isx86 || isAarch64) (
+    wamr.overrideAttrs (_: {
+      env = lib.attrsets.optionalAttrs (stdenv.hostPlatform.isAarch64) {
+        # Avoid the following error upon linking a653lib
+        #
+        # undefined references to `__aarch64_ldadd4_acq'
         NIX_CFLAGS_COMPILE = "-mno-outline-atomics";
       };
-    }))
-    wasmtime
-  ];
+    })
+  );
 
   cmakeFlags = [
     "-DA653LIB_BUILD_WASM=on"

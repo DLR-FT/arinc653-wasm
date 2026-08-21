@@ -60,6 +60,20 @@
               overlays = [ self.overlays.default ];
             };
 
+            pkgsArmv7l = import nixpkgs {
+              inherit system;
+              crossSystem = "armv7l-linux";
+              # import our overlay for the package in pkgs/
+              overlays = [ self.overlays.default ];
+            };
+
+            pkgsPpc64 = import nixpkgs {
+              inherit system;
+              crossSystem = "powerpc64-linux";
+              # import our overlay for the package in pkgs/
+              overlays = [ self.overlays.default ];
+            };
+
             pkgsWasm = import nixpkgs {
               system = "x86_64-linux";
               crossSystem = {
@@ -77,6 +91,8 @@
             # packages from `pkgs/`, injected into the `pkgs` via our `overlay.nix`
             packages = pkgs.arinc653WasmPkgs // {
               a653lib-cross-aarch64 = pkgsAarch64.callPackage pkgs/a653lib.nix { };
+              a653lib-cross-armv7l = pkgsArmv7l.callPackage pkgs/a653lib.nix { };
+              a653lib-cross-ppc64be = pkgsPpc64.callPackage pkgs/a653lib.nix { };
               wasm-partitions = pkgsWasm.callPackage pkgs/wasm-partitions.nix { };
             };
 
