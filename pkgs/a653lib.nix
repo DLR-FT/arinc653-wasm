@@ -3,8 +3,8 @@
   stdenv,
   fetchFromGitHub,
   fetchurl,
+  pkgsBuildBuild,
 
-  c-abi-lens,
   cmake,
   pkg-config,
   pkgsCross,
@@ -55,7 +55,7 @@ stdenv.mkDerivation {
     "-DARINC653_ZIP=${arinc653HeaderZip}"
 
     "-DA653LIB_FETCH_C_ABI_LENS=off"
-    "-DC_ABI_LENS_EXECUTABLE=${lib.meta.getExe c-abi-lens}"
+    "-DC_ABI_LENS_EXECUTABLE=${lib.meta.getExe pkgsBuildBuild.c-abi-lens}"
 
     "-DWASM_CLANG=${lib.meta.getExe' pkgsCross.wasi32.stdenv.cc "${pkgsCross.wasi32.stdenv.cc.targetPrefix}cc"}"
   ];
